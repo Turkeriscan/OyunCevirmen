@@ -11,6 +11,7 @@ Kisayollar:
     F11 - Programi kapat.
 """
 import collections
+import concurrent.futures
 import logging
 import logging.handlers
 import os
@@ -142,6 +143,7 @@ class AppBridge(QtCore.QObject):
     quit_signal = QtCore.pyqtSignal()
     show_window_signal = QtCore.pyqtSignal()
     toggle_mini_signal = QtCore.pyqtSignal()
+    ask_google_permission_signal = QtCore.pyqtSignal()
 
 
 class Orchestrator:
@@ -169,12 +171,33 @@ class Orchestrator:
         self._live_stop_event = threading.Event()
         self._live_thread = None
 
+        # ---- paralel ceviri (bkz. _translate_one / _submit_live_translation) ----
+        max_workers = max(1, int(config.get("translate_parallel_workers", 3)))
+        self._translate_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="ceviri"
+        )
+        self._translate_inflight = set()       # su an cevrilmekte olan metinler
+        self._translate_inflight_lock = threading.Lock()
+        # Ollama'nin paralel istekleri iyi karsilamadigi gozlenirse (ardisik
+        # hata/zaman asimi), gecici olarak tek tek (seri) cevirmeye donulur.
+        self._translate_consecutive_failures = 0
+        self._translate_fail_lock = threading.Lock()
+        self._translate_sequential_lock = threading.Lock()
+
         self.main_window = None
+
+        # ---- Google Translate izni (bkz. _request_google_permission) ----
+        self._google_prompt_shown = False   # bu oturumda zaten soruldu mu
+        self._pending_google_prompt = False  # pencere kapaliyken istendi, acilinca sor
+        self._google_prompt_lock = threading.Lock()
+        self._quitting = False
+        self.translator.on_google_permission_needed = self._request_google_permission
 
         self.bridge = AppBridge()
         self.bridge.quit_signal.connect(self._quit_on_gui_thread)
         self.bridge.show_window_signal.connect(self._show_window_on_gui_thread)
         self.bridge.toggle_mini_signal.connect(self._toggle_mini_on_gui_thread)
+        self.bridge.ask_google_permission_signal.connect(self._ask_google_permission_on_gui_thread)
         self.mini_panel = MiniPanelController(config, self)
 
         self.hotkeys = hotkeys_mod.HotkeyManager(
@@ -225,12 +248,17 @@ class Orchestrator:
             if frame is None:
                 logger.warning("Ekran yakalanamadi.")
                 return
-            boxes = self._scan_and_translate(frame, offset=(0, 0))
+            survivors = self._ocr_and_filter(frame, offset=self.capturer.get_origin())
+            boxes, stats = self._translate_all_blocking(survivors)
             with self._mode_lock:
                 if self.mode != self.MODE_INSTANT:
                     return  # bu arada kapatildi/mod degisti
             self.overlay.show_boxes_threadsafe(boxes)
-            logger.info("Anlik tarama tamamlandi: %d kutu gosterildi.", len(boxes))
+            logger.info(
+                "Anlik tarama tamamlandi: %d satir bulundu (%d onbellekten), "
+                "ortalama ceviri suresi %.2f sn, %d kutu gosterildi.",
+                stats["total"], stats["cache_hits"], stats["avg_seconds"], len(boxes),
+            )
         except Exception as exc:
             logger.exception("Anlik tarama hatasi: %s", exc)
 
@@ -265,6 +293,7 @@ class Orchestrator:
         prev_frame = None
         cell_signatures = {}
         cell_boxes = {}
+        cell_lock = threading.Lock()
         grid = None
         frame_h = frame_w = None
 
@@ -286,6 +315,14 @@ class Orchestrator:
                 continue
 
             any_change = False
+            tick_total = 0
+            tick_cache_hits = 0
+            tick_pending = 0
+            context_lines = self._context_lines()
+            source_lang = self.config.get("source_lang", "auto")
+            target_lang = self.config.get("target_lang", "tr")
+            engine_pref = self.config.get("translate_engine", "ollama")
+
             for idx, cell in enumerate(grid):
                 # Degisim tespiti HUCRENIN KENDI sinirlariyla yapilir (ritim/performans
                 # icin), ama OCR'a gonderilen kirpma bu sinirin disina da tasar
@@ -294,33 +331,78 @@ class Orchestrator:
                 # her iki komsu hucre de kelimenin TAMAMINI gorur.
                 sig = capture_mod.cell_signature(frame, cell)
                 prev_sig = cell_signatures.get(idx)
-                if capture_mod.signature_changed(prev_sig, sig):
-                    any_change = True
-                    cell_signatures[idx] = sig
-                    l, t, r, b = cell
-                    pl = max(0, l - padding)
-                    pt = max(0, t - padding)
-                    pr = min(frame_w, r + padding)
-                    pb = min(frame_h, b + padding)
-                    sub = frame[pt:pb, pl:pr]
-                    boxes = self._scan_and_translate(sub, offset=(pl, pt))
-                    cell_boxes[idx] = boxes
+                if not capture_mod.signature_changed(prev_sig, sig):
+                    continue
+                any_change = True
+                cell_signatures[idx] = sig
+                l, t, r, b = cell
+                pl = max(0, l - padding)
+                pt = max(0, t - padding)
+                pr = min(frame_w, r + padding)
+                pb = min(frame_h, b + padding)
+                sub = frame[pt:pb, pl:pr]
+                mon_left, mon_top = self.capturer.get_origin()
+                offset = (pl + mon_left, pt + mon_top)
+
+                survivors = self._ocr_and_filter(sub, offset)
+                tick_total += len(survivors)
+
+                # Onbellekte olanlar HEMEN gosterilir (bu hucrenin kutu listesi);
+                # olmayanlar arka planda (sinirli paralellikte) cevrilip hazir
+                # olduklarinda overlay ayrica guncellenir - tarama dongusu
+                # (bu for dongusu ve disaridaki while) onlari BEKLEMEZ.
+                cached_boxes = []
+                for res in survivors:
+                    cached = self.translator.cache.get(res.text, source_lang, target_lang, engine_pref)
+                    if cached is not None:
+                        tick_cache_hits += 1
+                        cached_boxes.append(self._make_box(res, cached))
+                    else:
+                        tick_pending += 1
+                        self._submit_live_translation(res, idx, cell_boxes, cell_lock, context_lines)
+
+                with cell_lock:
+                    cell_boxes[idx] = cached_boxes
 
             prev_frame = frame
 
             if any_change:
-                flat = _dedupe_boxes(
-                    [b for lst in cell_boxes.values() for b in lst]
-                )
+                with cell_lock:
+                    flat = _dedupe_boxes([b for lst in cell_boxes.values() for b in lst])
                 self.overlay.show_boxes_threadsafe(flat)
                 logger.info(
-                    "Canli mod guncelleme: %d kutu -> %s",
-                    len(flat), [b.text for b in flat][:8],
+                    "Canli mod guncelleme: %d satir (%d onbellekten, %d arka planda "
+                    "cevriliyor) -> %d kutu: %s",
+                    tick_total, tick_cache_hits, tick_pending, len(flat),
+                    [b.text for b in flat][:8],
                 )
 
             self._sleep_remaining(t0, interval)
 
         logger.info("Canli mod dongusu sonlandi.")
+
+    def _submit_live_translation(self, result, idx, cell_boxes, cell_lock, context_lines):
+        """Bir satiri arka planda cevirir; bitince SADECE o hucrenin kutu
+        listesine ekler ve overlay'i gunceller. Canli dongu bunu beklemez."""
+        if not self._claim_inflight(result.text):
+            return  # ayni metin zaten baska bir yerden cevriliyor
+
+        def work():
+            try:
+                translated = self._translate_one(result.text, context_lines)
+            finally:
+                self._release_inflight(result.text)
+            if not translated or self._live_stop_event.is_set():
+                return
+            self._remember(result.text, translated)
+            box = self._make_box(result, translated)
+            with cell_lock:
+                cell_boxes.setdefault(idx, []).append(box)
+                flat = _dedupe_boxes([b for lst in cell_boxes.values() for b in lst])
+            if not self._live_stop_event.is_set():
+                self.overlay.show_boxes_threadsafe(flat)
+
+        self._translate_executor.submit(work)
 
     @staticmethod
     def _sleep_remaining(t0, interval):
@@ -330,27 +412,120 @@ class Orchestrator:
             time.sleep(remaining)
 
     # ------------------------------------------------------- yardimci
-    def _scan_and_translate(self, frame_bgr, offset):
+    def _ocr_and_filter(self, frame_bgr, offset):
+        """OCR calistirir, paragraf satirlarini birlestirir ve cevrilmeye
+        deger olmayanlari (cok kisa/sembol/dusuk guven/zaten Turkce) eler."""
         ocr_results = self.ocr_manager.recognize(frame_bgr, offset=offset)
         ocr_results = ocr_mod.merge_paragraph_lines(ocr_results)
-        boxes = []
         min_len = self.config.get("min_text_length", 2)
         min_conf = self.config.get("min_ocr_confidence", 0.45)
+        source_lang = self.config.get("source_lang", "auto")
+        return [
+            r for r in ocr_results
+            if textfilter.should_translate(
+                r.text, r.confidence, min_length=min_len, min_confidence=min_conf,
+                source_lang=source_lang,
+            )
+        ]
 
-        for r in ocr_results:
-            if not textfilter.should_translate(
-                r.text, r.confidence, min_length=min_len, min_confidence=min_conf
-            ):
+    @staticmethod
+    def _make_box(result, translated_text):
+        l, t, right, b = result.bbox
+        rect = QtCore.QRect(int(l), int(t), int(right - l), int(b - t))
+        return overlay_mod.TranslationBox(rect, translated_text)
+
+    def _context_lines(self):
+        """Son N cevrilmis satiri (en yeni once) modele baglam olarak
+        verilecek (orijinal, ceviri) ciftleri halinde dondurur."""
+        n = max(0, int(self.config.get("translate_context_lines", 4)))
+        if n == 0:
+            return []
+        return [(orig, trans) for _, orig, trans in list(self.recent)[:n]]
+
+    def _claim_inflight(self, text):
+        """Ayni metin birden fazla yerden (orn. ortusen iki hucreden) ayni
+        anda cevrilmeye calisiliyorsa, sadece ilkine izin verir."""
+        with self._translate_inflight_lock:
+            if text in self._translate_inflight:
+                return False
+            self._translate_inflight.add(text)
+            return True
+
+    def _release_inflight(self, text):
+        with self._translate_inflight_lock:
+            self._translate_inflight.discard(text)
+
+    def _translate_one(self, text, context_lines):
+        """Tek bir metni cevirir. Ollama ardisik hata/zaman asimi verirse
+        (paralel istekleri iyi karsilamiyor olabilir), devre kesici devreye
+        girer ve bir sureligine TEK TEK (seri) cevirmeye doner; ilk basari
+        sayaci sifirlar."""
+        degraded = self._translate_consecutive_failures >= 2
+        if degraded:
+            with self._translate_sequential_lock:
+                translated = self.translator.translate(text, context_lines=context_lines)
+        else:
+            translated = self.translator.translate(text, context_lines=context_lines)
+
+        with self._translate_fail_lock:
+            if translated:
+                self._translate_consecutive_failures = 0
+            else:
+                self._translate_consecutive_failures += 1
+        return translated
+
+    def _translate_all_blocking(self, results):
+        """Verilen tum OCR sonuclarini cevirir (onbellek + sinirli
+        paralellik), hepsi bitene kadar bekler - aninda mod (F9) tek seferlik
+        bir tarama oldugu icin sonucu bekleyebilir. Canli mod ise bu
+        fonksiyonu KULLANMAZ (bkz. _live_loop/_submit_live_translation);
+        orada tarama dongusu cevirileri beklemeden devam eder."""
+        context_lines = self._context_lines()
+        source_lang = self.config.get("source_lang", "auto")
+        target_lang = self.config.get("target_lang", "tr")
+        engine_pref = self.config.get("translate_engine", "ollama")
+
+        boxes = []
+        cache_hits = 0
+        durations = []
+
+        pending = []
+        for r in results:
+            cached = self.translator.cache.get(r.text, source_lang, target_lang, engine_pref)
+            if cached is not None:
+                cache_hits += 1
+                boxes.append(self._make_box(r, cached))
+            else:
+                pending.append(r)
+
+        futures = {}
+        for r in pending:
+            if not self._claim_inflight(r.text):
                 continue
-            translated = self.translator.translate(r.text)
-            logger.debug("OCR: %r (conf=%.2f) -> %r", r.text, r.confidence, translated)
-            if not translated:
-                continue
-            self._remember(r.text, translated)
-            l, t, right, b = r.bbox
-            rect = QtCore.QRect(int(l), int(t), int(right - l), int(b - t))
-            boxes.append(overlay_mod.TranslationBox(rect, translated))
-        return boxes
+            t0 = time.time()
+            fut = self._translate_executor.submit(self._translate_one, r.text, context_lines)
+            futures[fut] = (r, t0)
+
+        for fut in concurrent.futures.as_completed(futures):
+            r, t0 = futures[fut]
+            try:
+                translated = fut.result()
+            except Exception as exc:
+                logger.warning("Ceviri is parcacigi hata verdi: %s", exc)
+                translated = None
+            finally:
+                self._release_inflight(r.text)
+            durations.append(time.time() - t0)
+            if translated:
+                self._remember(r.text, translated)
+                boxes.append(self._make_box(r, translated))
+
+        stats = {
+            "total": len(results),
+            "cache_hits": cache_hits,
+            "avg_seconds": (sum(durations) / len(durations)) if durations else 0.0,
+        }
+        return boxes, stats
 
     def _remember(self, original, translated):
         """Ayni cumle canli modda tekrar tekrar gelir; listede sadece bir kez
@@ -398,6 +573,7 @@ class Orchestrator:
     # --------------------------------------------------------------- F11
     def request_quit(self):
         logger.info("Cikis istendi, kapatiliyor...")
+        self._quitting = True
         with self._mode_lock:
             self._stop_live_locked()
         try:
@@ -406,6 +582,10 @@ class Orchestrator:
             pass
         try:
             self.tray.stop()
+        except Exception:
+            pass
+        try:
+            self._translate_executor.shutdown(wait=False, cancel_futures=True)
         except Exception:
             pass
         self.bridge.quit_signal.emit()
@@ -450,9 +630,95 @@ class Orchestrator:
         self.main_window.show()
         self.main_window.raise_()
         self.main_window.activateWindow()
+        if self._pending_google_prompt:
+            self._pending_google_prompt = False
+            self._show_google_permission_dialog()
+
+    # ------------------------------------------------- Google Translate izni
+    def _request_google_permission(self):
+        """Ceviri is parcaciklarindan (arka plan thread) cagrilir. Izin
+        daha once hic sorulmadiysa, bu oturumda SADECE BIR KEZ sorulmasini
+        saglar; pencere acik/gorunurse dogrudan soru penceresi, degilse
+        tepsi bildirimi (ve pencere acilinca soru) gosterilir."""
+        with self._google_prompt_lock:
+            if self._google_prompt_shown:
+                return
+            self._google_prompt_shown = True
+        self.bridge.ask_google_permission_signal.emit()
+
+    def _ask_google_permission_on_gui_thread(self):
+        if self._quitting:
+            return  # program kapanirken yeni bir soru penceresi acmanin anlami yok
+        if self.main_window is not None and self.main_window.isVisible():
+            self._show_google_permission_dialog()
+        else:
+            self._pending_google_prompt = True
+            try:
+                self.tray.notify(
+                    "Ollama çalışmıyor. Ekrandaki yazıları Google Translate ile "
+                    "çevirmek için kontrol panelini açıp izin verebilirsin "
+                    "(Çeviri sayfası).",
+                    "Oyun Çevirmen",
+                )
+            except Exception:
+                pass
+
+    def _show_google_permission_dialog(self):
+        try:
+            answer = QtWidgets.QMessageBox.question(
+                self.main_window, "Google Translate kullanılsın mı?",
+                "Ollama çalışmıyor. Ekrandaki yazılar çeviri için Google'a "
+                "(internete) gönderilsin mi?\n\nBu seçimi istediğin zaman "
+                "Çeviri sayfasından değiştirebilirsin.",
+            )
+            if self._quitting:
+                # Program kapanirken pencere zorla kapatildiysa Qt "Hayir"
+                # donebilir; bu kullanicinin GERCEK cevabi degil, kaydetme.
+                logger.info("Google izin penceresi kapanirken kesildi, cevap kaydedilmedi.")
+                return
+            allowed = answer == QtWidgets.QMessageBox.StandardButton.Yes
+            self.config["allow_google_fallback"] = allowed
+            config_mod.save_config(self.config)
+            logger.info("Google Translate izni: %s", "verildi" if allowed else "verilmedi")
+            if self.main_window is not None:
+                with self.main_window.loading():
+                    for page in self.main_window.settings_pages:
+                        page.load(self.config)
+                self.main_window.refresh_status()
+        except Exception as exc:
+            logger.error("Google izin penceresi gosterilemedi: %s", exc)
+
+    def reset_google_permission_prompt(self):
+        """Ayarlar 'varsayilana dondur' ile allow_google_fallback tekrar
+        None (sorulmadi) yapildiginda, bu oturumda yeniden sorulabilmesi
+        icin bayragi sifirlar."""
+        with self._google_prompt_lock:
+            self._google_prompt_shown = False
+        self._pending_google_prompt = False
+
+
+def _set_process_dpi_awareness():
+    """Islemi "monitor basina DPI farkinda" yapar. Bu olmadan, farkli
+    olcekli (%100/%125/%150) monitorler arasinda mss/dxcam/Qt'nin
+    rapor ettigi koordinatlar birbiriyle tutarsiz olabilir (bazisi
+    fiziksel piksel, bazisi olceklenmis/mantiksal piksel dondurebilir),
+    bu da cevirilerin yanlis yere cizilmesine yol acar. En erken,
+    QApplication olusturulmadan once cagrilmalidir."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PER_MONITOR_DPI_AWARE
+    except Exception:
+        try:
+            import ctypes
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception as exc:
+            logger.warning("Islem DPI farkindaligi ayarlanamadi: %s", exc)
 
 
 def main():
+    _set_process_dpi_awareness()
     config = config_mod.load_config()
     setup_logging(config.get("log_level", "INFO"))
     logger.info("Oyun Cevirmen baslatiliyor...")

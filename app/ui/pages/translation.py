@@ -5,6 +5,8 @@ import time
 
 from PyQt6 import QtCore, QtWidgets
 
+from app import config as config_mod
+from app.core import ocr as ocr_mod
 from app.ui import theme as T
 from app.ui.theme import px
 from app.ui.widgets import (Combo, IconButton, Page, SettingsGroup, label, section_header,
@@ -68,7 +70,17 @@ class TranslationPage(Page):
         self.combo_lang = Combo()
         for code, name in SOURCE_LANGS:
             self.combo_lang.addItem(name, code)
-        g.row("Oyunun dili", "Biliyorsan seç; otomatik algılamadan daha isabetli okur.", self.combo_lang)
+        self.lang_row = g.row("Oyunun dili", "", self.combo_lang)
+
+        self.combo_google_perm = Combo()
+        self.combo_google_perm.addItem("Açık", True)
+        self.combo_google_perm.addItem("Kapalı", False)
+        self.google_perm_row = g.row(
+            "Ollama çalışmazsa Google'a gönder",
+            "Ollama kapalıyken veya şüpheli bir çeviri üretirse, yedek olarak "
+            "ekrandaki yazı internet üzerinden Google Translate'e gönderilir.",
+            self.combo_google_perm,
+        )
 
         self.edit_host = QtWidgets.QLineEdit()
         self.edit_host.setMinimumWidth(px(220))
@@ -115,8 +127,14 @@ class TranslationPage(Page):
 
         self.combo_ocr.currentIndexChanged.connect(self._hints)
         self.combo_translate.currentIndexChanged.connect(self._hints)
+        self.combo_lang.currentIndexChanged.connect(self._hints)
         for w in (self.combo_ocr, self.combo_translate, self.combo_lang):
             w.currentIndexChanged.connect(ctx.schedule_save)
+        # allow_google_fallback uc durumlu (None=sorulmadi); genel kaydetme
+        # akisina (save()) dahil EDILMEZ, aksi halde ilk ayar degisikliginde
+        # "sorulmadi" durumu sessizce "Kapali"ya donusurdu. Degisiklik
+        # dogrudan ve aninda yazilir.
+        self.combo_google_perm.currentIndexChanged.connect(self._google_perm_changed)
         self.combo_model.currentIndexChanged.connect(ctx.schedule_save)
         self.combo_model.editTextChanged.connect(ctx.schedule_save)
         self.edit_host.editingFinished.connect(ctx.schedule_save)
@@ -131,6 +149,12 @@ class TranslationPage(Page):
         if self.combo_lang.findData(lang) < 0:
             self.combo_lang.addItem(lang, lang)
         _set(self.combo_lang, lang)
+        # allow_google_fallback uc durumlu: None (sorulmadi) gorsel olarak
+        # "Kapali" ile gosterilir ama bu SECIM OLARAK YAZILMAZ (bkz. save()
+        # ve _google_perm_changed) - kullanici dokunmadan kalirsa "sorulmadi"
+        # durumu korunur.
+        allowed = cfg.get("allow_google_fallback")
+        _set(self.combo_google_perm, False if allowed is None else bool(allowed))
         self._hints()
 
     def save(self, cfg):
@@ -139,13 +163,48 @@ class TranslationPage(Page):
         cfg["ollama_model"] = self.combo_model.currentText().strip()
         cfg["ollama_host"] = self.edit_host.text().strip() or "http://127.0.0.1:11434"
         cfg["source_lang"] = self.combo_lang.currentData() or "auto"
+        # allow_google_fallback BILEREK burada yazilmiyor; bkz. yukaridaki not.
+
+    def _google_perm_changed(self, *_):
+        if self.ctx.is_loading():
+            return
+        value = bool(self.combo_google_perm.currentData())
+        self.ctx.config["allow_google_fallback"] = value
+        config_mod.save_config(self.ctx.config)
+        self.ctx.flash("Google Translate izni açıldı" if value else "Google Translate izni kapatıldı")
 
     def _hints(self, *_):
         ocr = dict((k, h) for k, _n, h in OCR_ENGINES).get(self.combo_ocr.currentData(), "")
         tr = dict((k, h) for k, _n, h in TRANSLATE_ENGINES).get(self.combo_translate.currentData(), "")
         _set_hint(self.ocr_row, ocr)
         _set_hint(self.tr_row, tr)
+        _set_hint(self.lang_row, self._lang_hint_text())
         self.model_row.setEnabled(self.combo_translate.currentData() == "ollama")
+        is_google_primary = self.combo_translate.currentData() == "google"
+        self.google_perm_row.setEnabled(not is_google_primary)
+        _set_hint(
+            self.google_perm_row,
+            "Çeviri motoru olarak zaten Google Translate'i seçtin, bu ayar geçersiz."
+            if is_google_primary else
+            "Ollama kapalıyken veya şüpheli bir çeviri üretirse, yedek olarak "
+            "ekrandaki yazı internet üzerinden Google Translate'e gönderilir.",
+        )
+
+    def _lang_hint_text(self):
+        lang = self.combo_lang.currentData() or "auto"
+        if lang == "auto":
+            return ("Otomatik algılama pratikte Latin alfabeli dilleri (İngilizce, "
+                    "Almanca, Fransızca, İspanyolca vb.) okur. Japonca, Korece, "
+                    "Rusça veya Çince bir oyun için o dili doğrudan seç.")
+        if self.combo_ocr.currentData() != "windows":
+            return "Biliyorsan seç; otomatik algılamadan daha isabetli okur."
+        if ocr_mod.is_windows_ocr_language_installed(lang):
+            return "Biliyorsan seç; otomatik algılamadan daha isabetli okur."
+        tag = ocr_mod.windows_ocr_tag_for(lang)
+        return (f"Bu dilin Windows okuma paketi kurulu değil ({tag}). Ayarlar > Saat ve "
+                f"Dil > Dil ve Bölge'den ekleyebilir, yönetici olarak "
+                f"\"DISM /Online /Add-Capability /CapabilityName:Language.OCR~~~{tag}~0.0.1.0\" "
+                f"komutunu çalıştırabilir, ya da yukarıdan EasyOCR'ı seçebilirsin.")
 
     # ----------------------------------------------------------- modeller
     def refresh_models(self):

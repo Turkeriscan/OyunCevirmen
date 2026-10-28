@@ -43,6 +43,23 @@ DEFAULT_CONFIG = {
     # Akıllı filtreleme eşikleri
     "min_text_length": 2,
     "min_ocr_confidence": 0.45,
+    # Kucuk yazilari OCR'dan once 2 kat buyutup koordinatlari geri olcekler;
+    # kucuk fontlu oyun ici yazilarda okuma isabetini artirir.
+    "ocr_upscale_small_text": True,
+    # Canli modda onbellekte olmayan satirlar en fazla bu kadar is parcaciginda
+    # AYNI ANDA cevrilir (Ollama'ya asiri paralel yuk binmesin diye sinirli).
+    "translate_parallel_workers": 3,
+    # Diyaloglarda zamir/hitap tutarliligi icin modele son kac satirin
+    # cevirisi baglam olarak (cevrilmeden, sadece referans icin) verilsin.
+    "translate_context_lines": 4,
+    # Ollama calismadiginda/supheli ceviri uretirse YEDEK olarak Google
+    # Translate'e (internete) metin gonderilsin mi? Uc durumlu:
+    #   None  -> henuz sorulmadi (ilk ihtiyac aninda bir kez sorulur)
+    #   True  -> izin verildi
+    #   False -> izin verilmedi (ceviri yapilmaz, durum net gosterilir)
+    # Kullanici ceviri motoru olarak BILEREK "google" secerse bu ayar
+    # devreye girmez (zaten acikca onaylamis olur).
+    "allow_google_fallback": None,
     # Performans
     "max_cache_memory_items": 5000,
     "capture_monitor_index": 0,

@@ -310,6 +310,10 @@ class MainWindow(FramelessWindow):
             self.orchestrator.hotkeys.start()
         except Exception:
             pass
+        try:
+            self.orchestrator.reset_google_permission_prompt()
+        except Exception:
+            pass
         self.flash("Varsayılan ayarlara dönüldü")
 
     # ========================================================= kaydetme
@@ -399,8 +403,18 @@ class MainWindow(FramelessWindow):
                 self.credits.set_item("engine", f"Ollama, {cfg.get('ollama_model', '')}", "ok",
                                       "Çeviriler bilgisayarında yapılıyor.")
             else:
-                self.credits.set_item("engine", "Google Translate (Ollama kapalı)", "sub",
-                                      "Ollama çalışmadığı için yedek motor kullanılıyor.")
+                allowed = cfg.get("allow_google_fallback")
+                if allowed is True:
+                    self.credits.set_item("engine", "Google Translate (Ollama kapalı)", "sub",
+                                          "Ollama çalışmadığı için yedek motor kullanılıyor.")
+                elif allowed is False:
+                    self.credits.set_item("engine", "Çeviri yapılamıyor", "bad",
+                                          "Ollama kapalı ve Google Translate iznin yok. "
+                                          "Çeviri sayfasından izin verebilirsin.")
+                else:
+                    self.credits.set_item("engine", "Çeviri yapılamıyor", "bad",
+                                          "Ollama kapalı. Google Translate'e izin verip "
+                                          "vermeyeceğin sorulacak.")
         else:
             self.credits.set_item("engine", "Google Translate", "ok", "İnternet bağlantısı gerekir.")
         self.credits.set_item("ocr", f"{OCR_SHORT.get(cfg.get('ocr_engine'), cfg.get('ocr_engine'))}, "
