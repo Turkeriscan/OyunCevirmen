@@ -183,6 +183,10 @@ class Orchestrator:
         self._translate_consecutive_failures = 0
         self._translate_fail_lock = threading.Lock()
         self._translate_sequential_lock = threading.Lock()
+        # Ollama servisi oyun sirasinda coker/kapanirsa (surum guncellemesi,
+        # bellek yetersizligi vb.) kullanici hicbir sey gormeden sessizce
+        # cevrilmemeye baslar; bkz. _maybe_recover_ollama.
+        self._ollama_recovery_attempted = False
 
         self.main_window = None
 
@@ -470,9 +474,39 @@ class Orchestrator:
         with self._translate_fail_lock:
             if translated:
                 self._translate_consecutive_failures = 0
+                self._ollama_recovery_attempted = False
             else:
                 self._translate_consecutive_failures += 1
+                failures = self._translate_consecutive_failures
+        if not translated:
+            self._maybe_recover_ollama(failures)
         return translated
+
+    def _maybe_recover_ollama(self, failures):
+        """Ollama ardisik ~5 defa cevap vermezse (surecin kendisi coktu/
+        kapandi varsayimiyla) arka planda bir kez yeniden baslatmayi dener.
+        Kullanicinin oyunu birakip gelip programi yeniden baslatmasini
+        beklemek yerine servisi kendisi ayaga kaldirmaya calisir."""
+        if failures < 5 or self._quitting:
+            return
+        if self.config.get("translate_engine") != "ollama":
+            return
+        with self._translate_fail_lock:
+            if self._ollama_recovery_attempted:
+                return
+            self._ollama_recovery_attempted = True
+
+        def worker():
+            logger.warning(
+                "Ollama ust uste %d cevap vermedi, yeniden baslatilmaya calisiliyor...",
+                failures,
+            )
+            if ensure_ollama_running(self.translator.ollama.host):
+                logger.info("Ollama yeniden baslatildi.")
+            else:
+                logger.error("Ollama yeniden baslatilamadi; elle kontrol gerekebilir.")
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _translate_all_blocking(self, results):
         """Verilen tum OCR sonuclarini cevirir (onbellek + sinirli

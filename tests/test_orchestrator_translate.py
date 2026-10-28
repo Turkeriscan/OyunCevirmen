@@ -21,6 +21,7 @@ class _FakeOrchestrator:
     calistirmadan test etmek icin minimal bir host nesnesi."""
 
     _translate_one = main_mod.Orchestrator._translate_one
+    _maybe_recover_ollama = main_mod.Orchestrator._maybe_recover_ollama
     _claim_inflight = main_mod.Orchestrator._claim_inflight
     _release_inflight = main_mod.Orchestrator._release_inflight
     _context_lines = main_mod.Orchestrator._context_lines
@@ -37,9 +38,11 @@ class _FakeOrchestrator:
         self._translate_inflight = set()
         self._translate_inflight_lock = threading.Lock()
         self._translate_executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+        self._ollama_recovery_attempted = False
+        self._quitting = False
         self.recent = collections.deque(maxlen=40)
         self.recent_version = 0
-        self.config = {"translate_context_lines": context_lines_cfg}
+        self.config = {"translate_context_lines": context_lines_cfg, "translate_engine": "google"}
         self._google_prompt_shown = False
         self._pending_google_prompt = False
         self._google_prompt_lock = threading.Lock()
