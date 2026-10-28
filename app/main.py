@@ -697,6 +697,38 @@ class Orchestrator:
         self._pending_google_prompt = False
 
 
+def _install_crash_handlers():
+    """Yakalanmamis hatalarin HER ZAMAN gunluge yazilmasini saglar.
+
+    Program genelde pythonw.exe ile (konsolsuz) calisir; varsayilan
+    davranista yakalanmamis bir hata sessizce programi kapatir ve
+    kullanici hicbir sey gormez/gunlukte hicbir iz kalmaz. Bu fonksiyon:
+      - sys.excepthook: ana is parcacigindaki (PyQt slot'lari dahil,
+        PyQt bu hook'u Python istisnalari icin kullanir) yakalanmamis
+        hatalari loglar.
+      - threading.excepthook: arka plan is parcaciklarindaki (canli mod
+        dongusu, ceviri havuzu vb.) yakalanmamis hatalari loglar.
+    """
+    def _log_exception(exc_type, exc_value, exc_tb, thread_name="MainThread"):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_tb)
+            return
+        logger.critical(
+            "YAKALANMAMIS HATA (%s): %s", thread_name,
+            "".join(__import__("traceback").format_exception(exc_type, exc_value, exc_tb)),
+        )
+
+    def _excepthook(exc_type, exc_value, exc_tb):
+        _log_exception(exc_type, exc_value, exc_tb, "MainThread")
+
+    def _thread_excepthook(args):
+        _log_exception(args.exc_type, args.exc_value, args.exc_traceback,
+                       getattr(args.thread, "name", "?"))
+
+    sys.excepthook = _excepthook
+    threading.excepthook = _thread_excepthook
+
+
 def _set_process_dpi_awareness():
     """Islemi "monitor basina DPI farkinda" yapar. Bu olmadan, farkli
     olcekli (%100/%125/%150) monitorler arasinda mss/dxcam/Qt'nin
@@ -718,36 +750,41 @@ def _set_process_dpi_awareness():
 
 
 def main():
-    _set_process_dpi_awareness()
     config = config_mod.load_config()
     setup_logging(config.get("log_level", "INFO"))
+    _install_crash_handlers()
     logger.info("Oyun Cevirmen baslatiliyor...")
 
-    ensure_ollama_running(config.get("ollama_host", "http://127.0.0.1:11434"))
+    try:
+        _set_process_dpi_awareness()
+        ensure_ollama_running(config.get("ollama_host", "http://127.0.0.1:11434"))
 
-    if os.name == "nt":
-        # Gorev cubugunda Python'un degil, programin kendi simgesi gorunsun
-        try:
-            import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("OyunCevirmen.App")
-        except Exception:
-            pass
+        if os.name == "nt":
+            # Gorev cubugunda Python'un degil, programin kendi simgesi gorunsun
+            try:
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("OyunCevirmen.App")
+            except Exception:
+                pass
 
-    app = QtWidgets.QApplication(sys.argv)
-    app.setQuitOnLastWindowClosed(False)
-    app.setApplicationName("Oyun Çevirmen")
-    ui_theme.load_fonts()
-    ui_theme.init_scale(app)
-    app.setFont(ui_theme.font("body", 10))
-    app.setStyleSheet(ui_theme.app_stylesheet())
-    app.setWindowIcon(QtGui.QIcon(os.path.join(BASE_DIR, "app", "assets", "icon.ico")))
+        app = QtWidgets.QApplication(sys.argv)
+        app.setQuitOnLastWindowClosed(False)
+        app.setApplicationName("Oyun Çevirmen")
+        ui_theme.load_fonts()
+        ui_theme.init_scale(app)
+        app.setFont(ui_theme.font("body", 10))
+        app.setStyleSheet(ui_theme.app_stylesheet())
+        app.setWindowIcon(QtGui.QIcon(os.path.join(BASE_DIR, "app", "assets", "icon.ico")))
 
-    orchestrator = Orchestrator(app, config)
-    orchestrator.start()
-    orchestrator.request_show_window()
+        orchestrator = Orchestrator(app, config)
+        orchestrator.start()
+        orchestrator.request_show_window()
 
-    exit_code = app.exec()
-    logger.info("Oyun Cevirmen kapandi (kod=%s).", exit_code)
+        exit_code = app.exec()
+        logger.info("Oyun Cevirmen kapandi (kod=%s).", exit_code)
+    except Exception:
+        logger.critical("Baslangicta yakalanmamis hata, program kapatiliyor.", exc_info=True)
+        exit_code = 1
     sys.exit(exit_code)
 
 
