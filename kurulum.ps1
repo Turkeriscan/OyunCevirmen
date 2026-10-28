@@ -17,6 +17,12 @@
 
     Kullanim: Kurulum.bat dosyasina cift tiklayin (bu betigi o cagirir).
 #>
+param(
+    # Belirli bir surumu (git etiketi veya dali, orn. "v1.2.0") kurmak
+    # icin bu satiri "v1.2.0" gibi doldurun. BOS birakilirsa (varsayilan)
+    # en guncel "main" dali kurulur/guncellenir - mevcut davranis budur.
+    [string]$Surum = ""
+)
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -164,44 +170,78 @@ if (Test-Command "ollama") {
 }
 
 # ----------------------------------------------------------------- 5) Proje
-Write-Step "Proje dosyalari hazirlaniyor ($TargetDir)"
+$surumEtiketi = if ($Surum) { " ($Surum)" } else { " (main)" }
+Write-Step "Proje dosyalari hazirlaniyor$surumEtiketi ($TargetDir)"
 $alreadyHere = (Test-Path (Join-Path $ScriptDir "app\main.py"))
-
 if ($alreadyHere) {
     Write-Skip "Betik zaten proje klasorunun icinde calistirilmis, oldugu yerde devam ediliyor."
     $TargetDir = $ScriptDir
-    if (Test-Path (Join-Path $TargetDir ".git")) {
-        try {
-            Push-Location $TargetDir
-            git pull --ff-only 2>&1 | Out-Null
-            Pop-Location
-            Write-Ok "Proje guncellendi (git pull)."
-            $Report["Proje"] = "guncellendi"
-        } catch {
-            Pop-Location -ErrorAction SilentlyContinue
-            Write-Warn2 "git pull basarisiz oldu, mevcut dosyalarla devam ediliyor."
-            $Report["Proje"] = "guncellenemedi, mevcut surum kullanildi"
+}
+
+if (Test-Path (Join-Path $TargetDir ".git")) {
+    # NOT: git (ve pek cok native komut) normal bilgi satirlarini bile
+    # stderr'e yazar. $ErrorActionPreference="Stop" altinda PowerShell 5.1
+    # bu satirlarin HER BIRINI (nereye yonlendirilirse yonlendirilsin)
+    # sonlandirici hataya cevirir. Bu yuzden bu blokta gecici olarak
+    # "Continue"ya alinip basari/basarisizlik $LASTEXITCODE ile kontrol
+    # edilir.
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        Push-Location $TargetDir
+        git fetch origin --tags --quiet 2>$null | Out-Null
+        if ($Surum) {
+            git checkout $Surum --quiet 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "git checkout '$Surum' basarisiz (kod $LASTEXITCODE)" }
+            git show-ref --verify --quiet "refs/remotes/origin/$Surum"
+            if ($LASTEXITCODE -eq 0) {
+                # Bu bir dalsa (etiket degil), o dalin en guncelini de cek
+                git pull --ff-only origin $Surum 2>$null | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "git pull basarisiz (kod $LASTEXITCODE)" }
+            }
+        } else {
+            git pull --ff-only 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "git pull basarisiz (kod $LASTEXITCODE)" }
         }
-    } else {
-        $Report["Proje"] = "mevcut klasor kullanildi"
+        Pop-Location
+        Write-Ok "Proje guncellendi$surumEtiketi."
+        $Report["Proje"] = "guncellendi$surumEtiketi"
+    } catch {
+        Pop-Location -ErrorAction SilentlyContinue
+        Write-Warn2 "Proje guncellenemedi, mevcut dosyalarla devam ediliyor: $_"
+        $Report["Proje"] = "guncellenemedi, mevcut surum kullanildi"
+    } finally {
+        $ErrorActionPreference = $prevEAP
     }
-} elseif (Test-Path (Join-Path $TargetDir ".git")) {
-    Write-Host "    $TargetDir zaten var, guncelleniyor..." -ForegroundColor White
-    Push-Location $TargetDir
-    git pull --ff-only
-    Pop-Location
-    Write-Ok "Proje guncellendi."
-    $Report["Proje"] = "guncellendi"
-} else {
-    Write-Host "    $TargetDir klasorune klonlaniyor..." -ForegroundColor White
-    if (Test-Path $TargetDir) {
+} elseif (Test-Path $TargetDir) {
+    if ($alreadyHere) {
+        $Report["Proje"] = "mevcut klasor kullanildi (git deposu degil)"
+    } else {
         Write-Err2 "$TargetDir zaten var ama bir git deposu degil. Lutfen klasoru tasiyin/silin ve tekrar deneyin."
         Read-Host "`nCikmak icin Enter'a basin"
         exit 1
     }
-    git clone $RepoUrl $TargetDir
-    Write-Ok "Proje klonlandi."
-    $Report["Proje"] = "klonlandi"
+} else {
+    Write-Host "    $TargetDir klasorune klonlaniyor..." -ForegroundColor White
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"  # git clone normal ilerlemeyi de stderr'e yazar
+    try {
+        if ($Surum) {
+            git clone --branch $Surum $RepoUrl $TargetDir 2>$null | Out-Null
+        } else {
+            git clone $RepoUrl $TargetDir 2>$null | Out-Null
+        }
+        if ($LASTEXITCODE -ne 0) { throw "git clone basarisiz (kod $LASTEXITCODE)" }
+        Write-Ok "Proje klonlandi$surumEtiketi."
+        $Report["Proje"] = "klonlandi$surumEtiketi"
+    } catch {
+        Write-Err2 "Proje klonlanamadi: $_"
+        Write-Host "    Internet baglantinizi ve '$Surum' adinin dogrulugunu kontrol edin." -ForegroundColor Yellow
+        Read-Host "`nCikmak icin Enter'a basin"
+        exit 1
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
 }
 
 Set-Location $TargetDir

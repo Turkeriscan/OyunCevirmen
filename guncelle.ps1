@@ -12,6 +12,12 @@
     Tasarimda degisiklik yapip GitHub'a yukledikten sonra, bilgisayarinizda
     bu dosyaya (Guncelle.bat ile) cift tiklamaniz yeterlidir.
 #>
+param(
+    # kurulum.ps1'deki $Surum ile tutarli: belirli bir etiket/dal icin
+    # doldurun (orn. "v1.2.0"), BOS birakilirsa (varsayilan) su an hangi
+    # dal/etiket uzerindeyseniz onun en guncelini ceker.
+    [string]$Surum = ""
+)
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -63,7 +69,8 @@ if ($running) {
 }
 
 # ----------------------------------------------------------------- git pull
-Write-Step "GitHub'daki en son surum kontrol ediliyor"
+$surumEtiketi = if ($Surum) { " ($Surum)" } else { "" }
+Write-Step "GitHub'daki en son surum kontrol ediliyor$surumEtiketi"
 $oldHash = (git rev-parse HEAD).Trim()
 
 $localChanges = git status --porcelain
@@ -72,16 +79,36 @@ if ($localChanges) {
     $localChanges | ForEach-Object { Write-Host "        $_" -ForegroundColor DarkYellow }
 }
 
+# NOT: git normal bilgi satirlarini bile stderr'e yazar; PowerShell 5.1'de
+# $ErrorActionPreference="Stop" altinda bu satirlarin HER BIRI (nereye
+# yonlendirilirse yonlendirilsin) sonlandirici hataya donusur. Bu yuzden
+# bu blokta gecici olarak "Continue"ya alinip basari $LASTEXITCODE ile
+# kontrol edilir.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 try {
-    git fetch origin --quiet
-    git pull --ff-only 2>&1 | Out-Null
+    git fetch origin --tags --quiet 2>$null | Out-Null
+    if ($Surum) {
+        git checkout $Surum --quiet 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "git checkout '$Surum' basarisiz (kod $LASTEXITCODE)" }
+        git show-ref --verify --quiet "refs/remotes/origin/$Surum"
+        if ($LASTEXITCODE -eq 0) {
+            git pull --ff-only origin $Surum 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "git pull basarisiz (kod $LASTEXITCODE)" }
+        }
+    } else {
+        git pull --ff-only 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "git pull basarisiz (kod $LASTEXITCODE)" }
+    }
 } catch {
+    $ErrorActionPreference = $prevEAP
     Write-Err2 "Guncelleme alinamadi. Internet baglantinizi kontrol edin veya yerel degisiklikler"
     Write-Err2 "catisma yaratiyor olabilir."
     Write-Host "    Teknik ayrinti: $_" -ForegroundColor DarkGray
     Read-Host "`nCikmak icin Enter'a basin"
     exit 1
 }
+$ErrorActionPreference = $prevEAP
 
 $newHash = (git rev-parse HEAD).Trim()
 
