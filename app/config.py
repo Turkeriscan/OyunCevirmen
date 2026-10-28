@@ -3,8 +3,11 @@ Ayarlar modülü.
 config.json dosyasını okur/yazar. Dosya yoksa varsayılan ayarlarla oluşturur.
 """
 import json
+import logging
 import os
 import threading
+
+logger = logging.getLogger("OyunCevirmen.config")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # C:\OyunCevirmen
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -76,8 +79,43 @@ DEFAULT_CONFIG = {
     "log_level": "INFO",
 }
 
+# Degeri None/esnek kalabilen anahtarlar: turu zorlanmaz, kullanildiklari
+# yerlerde zaten savunmaci kontrol var (orn. _restore_geometry, MiniPanel.place).
+_NULLABLE_KEYS = {"allow_google_fallback", "mini_panel_pos", "window_geometry"}
+
 _lock = threading.RLock()  # load_config() ilk calistirmada save_config()'u kilit tutarken cagirabilir
 _cached = None
+
+
+def _validate_config(data):
+    """Kullanici config.json'u elle bozmus olabilir (orn. sayi yerine metin
+    yazmis). Boyle bir anahtari SESSIZCE varsayilana dondurur, boylece
+    bozuk bir deger programin derinlerinde (orn. overlay cizimi, int()
+    donusumu) beklenmedik bir cokmeye yol acmaz. Bilinmeyen anahtarlar
+    (ileri surumlerden kalma olabilir) oldugu gibi birakilir."""
+    cleaned = dict(data)
+    for key, default in DEFAULT_CONFIG.items():
+        if key not in cleaned:
+            continue
+        value = cleaned[key]
+        if key in _NULLABLE_KEYS:
+            if key == "allow_google_fallback" and value not in (None, True, False):
+                logger.warning("config.json: '%s' gecersiz (%r), sifirlaniyor.", key, value)
+                cleaned[key] = None
+            continue
+        if isinstance(default, bool):
+            if not isinstance(value, bool):
+                logger.warning("config.json: '%s' gecersiz (%r), varsayilana donuluyor.", key, value)
+                cleaned[key] = default
+        elif isinstance(default, (int, float)):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                logger.warning("config.json: '%s' gecersiz (%r), varsayilana donuluyor.", key, value)
+                cleaned[key] = default
+        elif isinstance(default, str):
+            if not isinstance(value, str):
+                logger.warning("config.json: '%s' gecersiz (%r), varsayilana donuluyor.", key, value)
+                cleaned[key] = default
+    return cleaned
 
 
 def load_config():
@@ -92,10 +130,14 @@ def load_config():
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        except (json.JSONDecodeError, OSError):
+            if not isinstance(data, dict):
+                raise ValueError("config.json bir nesne (object) olmali")
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            logger.warning("config.json okunamadi (%s), varsayilanlarla devam ediliyor.", exc)
             data = {}
         merged = dict(DEFAULT_CONFIG)
         merged.update(data)
+        merged = _validate_config(merged)
         _cached = merged
         return _cached
 
