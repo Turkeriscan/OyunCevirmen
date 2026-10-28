@@ -30,13 +30,22 @@ class HotkeyManager:
             live_key = self.config.get("hotkey_live_toggle", "f10")
             quit_key = self.config.get("hotkey_quit", "f11")
 
-            self._hooks.append(keyboard.add_hotkey(instant_key, self._safe(self.on_instant)))
-            self._hooks.append(keyboard.add_hotkey(live_key, self._safe(self.on_live_toggle)))
-            self._hooks.append(keyboard.add_hotkey(quit_key, self._safe(self.on_quit)))
-            logger.info(
-                "Kisayollar aktif: aninda=%s canli=%s cikis=%s",
-                instant_key, live_key, quit_key,
-            )
+            registered = []
+            # Her kisayolu AYRI AYRI deneriz: config.json elle bozulup bir
+            # tusu gecersiz bir dizgeye donusturulmus olsa bile (orn. bos
+            # metin), DIGER iki kisayol yine de calismaya devam etsin -
+            # ozellikle F11 (cikis) her zaman en azindan denenmeli.
+            for name, key, handler in (
+                ("aninda", instant_key, self.on_instant),
+                ("canli", live_key, self.on_live_toggle),
+                ("cikis", quit_key, self.on_quit),
+            ):
+                try:
+                    self._hooks.append(keyboard.add_hotkey(key, self._safe(handler)))
+                    registered.append(f"{name}={key}")
+                except Exception as exc:
+                    logger.error("Kisayol kaydedilemedi (%s=%r): %s", name, key, exc)
+            logger.info("Kisayollar aktif: %s", ", ".join(registered) if registered else "HICBIRI (hata)")
 
     def _safe(self, fn):
         def wrapper():
