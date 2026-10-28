@@ -203,11 +203,23 @@ class ScreenCapturer:
     def close(self):
         try:
             if self.backend == "dxcam" and self._dxcam_cam is not None:
-                del self._dxcam_cam
+                # dxcam'in DXGI Desktop Duplication arayuzunu HEMEN serbest
+                # birakir. "del" ile cop toplayiciya birakmak CPython'da
+                # genelde de ayni ani sonucu verir (DXCamera.__del__ zaten
+                # release() cagirir), ama monitor sik degistiriliyorsa
+                # (change_monitor) GPU/ekran kopyalama kaynaginin gecikmeden
+                # birakilmasi icin acikca cagirmak daha guvenilir.
+                try:
+                    if not self._dxcam_cam.is_released:
+                        self._dxcam_cam.release()
+                except Exception as exc:
+                    logger.warning("dxcam release() basarisiz: %s", exc)
+                self._dxcam_cam = None
             if self._mss_inst is not None:
                 self._mss_inst.close()
-        except Exception:
-            pass
+                self._mss_inst = None
+        except Exception as exc:
+            logger.warning("Yakalama kaynaklari kapatilirken hata: %s", exc)
 
 
 def build_grid(width, height, cols, rows):

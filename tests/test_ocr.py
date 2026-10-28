@@ -5,7 +5,7 @@ dil kontrolu, kucuk yazi buyutme + koordinat geri olcekleme.
 Gercek ekran kartina, Windows OCR'a veya internete ihtiyac duymaz;
 winsdk/winocr cagrilari sahte (mock) nesnelerle degistirilir.
 """
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -165,3 +165,49 @@ def test_ocr_manager_recognize_applies_offset_after_rescale():
 
     # Buyutulmus karedeki (20,40,220,80) -> 2'ye bolunur (10,20,110,40) -> +offset
     assert results[0].bbox == (510.0, 320.0, 610.0, 340.0)
+
+
+# ------------------------------------------------- motor degisince GPU temizligi
+def test_release_engine_noop_for_non_easyocr():
+    """windows/paddle motoru birakilirken torch'a hic dokunulmamali."""
+    fake_engine = type("E", (), {"name": "windows"})()
+    with patch("builtins.__import__") as fake_import:
+        ocr.OCRManager._release_engine(fake_engine)
+        # torch import edilmeye CALISILMAMALI (easyocr degil)
+        torch_calls = [c for c in fake_import.call_args_list if c.args and c.args[0] == "torch"]
+        assert not torch_calls
+
+
+def test_release_engine_empties_cuda_cache_for_easyocr():
+    fake_reader = MagicMock()
+    fake_engine = type("E", (), {"name": "easyocr", "reader": fake_reader})()
+
+    fake_torch = MagicMock()
+    fake_torch.cuda.is_available.return_value = True
+
+    with patch.dict("sys.modules", {"torch": fake_torch}):
+        ocr.OCRManager._release_engine(fake_engine)
+
+    fake_torch.cuda.empty_cache.assert_called_once()
+
+
+def test_release_engine_handles_none_gracefully():
+    ocr.OCRManager._release_engine(None)  # istisna firlatmamali
+
+
+def test_get_engine_releases_old_engine_on_switch():
+    """OCR motoru degistiginde eski motor (GPU bellegi serbest birakilsin
+    diye) release edilmeli."""
+    cfg = {"ocr_engine": "windows", "source_lang": "auto"}
+    manager = ocr.OCRManager(cfg)
+
+    fake_old = MagicMock()
+    fake_old.name = "easyocr"
+    manager._engine = fake_old
+    manager._engine_name = "easyocr"
+
+    with patch.object(ocr.OCRManager, "_build_engine", return_value=MagicMock(name="windows_engine")), \
+         patch.object(ocr.OCRManager, "_release_engine") as release:
+        manager.get_engine()
+
+    release.assert_called_once_with(fake_old)

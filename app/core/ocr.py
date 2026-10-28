@@ -337,9 +337,30 @@ class OCRManager:
             if self._engine is not None and self._engine_name == wanted:
                 return self._engine
 
+            old_engine = self._engine
             self._engine = self._build_engine(wanted)
             self._engine_name = wanted
+            self._release_engine(old_engine)
             return self._engine
+
+    @staticmethod
+    def _release_engine(engine):
+        """Birakilan motor GPU'da bellek tutuyorsa (EasyOCR/PyTorch) onu
+        serbest birakir - kullanici OCR motorunu degistirince oyunun
+        kullanabilecegi ekran karti bellegi hemen geri verilsin diye."""
+        if engine is None or engine.name != "easyocr":
+            return
+        try:
+            del engine.reader
+        except Exception:
+            pass
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                logger.info("EasyOCR birakildi, GPU bellegi serbest birakildi.")
+        except Exception:
+            pass
 
     def _build_engine(self, wanted):
         source_lang = self.config.get("source_lang", "auto")

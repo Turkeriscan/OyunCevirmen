@@ -171,3 +171,74 @@ def test_screen_capturer_dxcam_falls_back_to_mss_origin_when_dxgi_unavailable():
 
     assert cap.backend == "dxcam"
     assert cap.get_origin() == (1920, 0)
+
+
+# ------------------------------------------------------- close() kaynak temizligi
+def test_close_releases_dxcam_camera():
+    """close() dxcam kamerasinda acikca release() cagirmali (GC'ye birakmak
+    yerine - monitor sik degistiginde kaynagin hemen serbest kalmasi icin)."""
+    fake_cam = _fake_dxcam_camera(1920, 0, 3840, 1080)
+    fake_cam.grab.return_value = object()
+    fake_cam.is_released = False
+
+    fake_dxcam_module = MagicMock()
+    fake_dxcam_module.create.return_value = fake_cam
+
+    with patch.object(capture, "_DXCAM_AVAILABLE", True), \
+         patch.object(capture, "dxcam", fake_dxcam_module, create=True):
+        cap = capture.ScreenCapturer(monitor_index=1)
+        cap.close()
+
+    fake_cam.release.assert_called_once()
+    assert cap._dxcam_cam is None
+
+
+def test_close_skips_release_if_already_released():
+    """Kamera zaten release edilmisse tekrar cagirmamali (dxcam bunu hata
+    sayabilir)."""
+    fake_cam = _fake_dxcam_camera(1920, 0, 3840, 1080)
+    fake_cam.grab.return_value = object()
+    fake_cam.is_released = True
+
+    fake_dxcam_module = MagicMock()
+    fake_dxcam_module.create.return_value = fake_cam
+
+    with patch.object(capture, "_DXCAM_AVAILABLE", True), \
+         patch.object(capture, "dxcam", fake_dxcam_module, create=True):
+        cap = capture.ScreenCapturer(monitor_index=1)
+        cap.close()
+
+    fake_cam.release.assert_not_called()
+
+
+def test_close_handles_release_exception_gracefully():
+    """release() patlarsa bile close() disariya istisna sizdirmamali."""
+    fake_cam = _fake_dxcam_camera(1920, 0, 3840, 1080)
+    fake_cam.grab.return_value = object()
+    fake_cam.is_released = False
+    fake_cam.release.side_effect = RuntimeError("patlat")
+
+    fake_dxcam_module = MagicMock()
+    fake_dxcam_module.create.return_value = fake_cam
+
+    with patch.object(capture, "_DXCAM_AVAILABLE", True), \
+         patch.object(capture, "dxcam", fake_dxcam_module, create=True):
+        cap = capture.ScreenCapturer(monitor_index=1)
+        cap.close()  # istisna firlatmamali
+
+
+def test_close_closes_mss_instance():
+    monitors = [
+        {"left": 0, "top": 0, "width": 3840, "height": 1080},
+        {"left": 0, "top": 0, "width": 1920, "height": 1080},
+        {"left": 1920, "top": 0, "width": 1920, "height": 1080},
+    ]
+    fake_mss_instance = _make_fake_mss(monitors)
+
+    with patch.object(capture, "_DXCAM_AVAILABLE", False), \
+         patch.object(capture.mss, "mss", return_value=fake_mss_instance):
+        cap = capture.ScreenCapturer(monitor_index=1)
+        cap.close()
+
+    fake_mss_instance.close.assert_called_once()
+    assert cap._mss_inst is None
