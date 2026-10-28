@@ -1,0 +1,20 @@
+# Temel bagimliliklar
+PyQt6
+dxcam
+mss
+pywin32
+keyboard
+pystray
+pillow
+deep-translator
+requests
+numpy
+opencv-python
+winocr
+winsdk
+langdetect
+
+# GPU'lu OCR (EasyOCR) icin AYRICA kurulmasi gerekir (Blackwell/RTX 50xx
+# serisi icin CUDA 12.8 wheel'leri kullanin):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+#   pip install easyocr
