@@ -26,6 +26,52 @@ except Exception as exc:  # pragma: no cover
 import mss
 
 
+def to_virtual_desktop(bbox, origin):
+    """Yerel (yakalanan monitore gore) bir bbox'i (l,t,r,b) sanal masaustu
+    (global, overlay'in kullandigi) koordinatina cevirir.
+
+    Saf bir fonksiyondur (yan etkisi yok) ki farkli monitor dizilimleri
+    (ikincil monitor saga/sola, negatif koordinatli monitor vb.) icin
+    kolayca test edilebilsin.
+
+    bbox: (left, top, right, bottom) - yakalanan karenin kendi 0,0'ina gore
+    origin: (left, top) - o monitorun sanal masaustundeki sol-ust kosesi
+    """
+    ox, oy = origin
+    l, t, r, b = bbox
+    return (l + ox, t + oy, r + ox, b + oy)
+
+
+def _dxcam_output_origin(camera):
+    """dxcam kamerasinin baglandigi DXGI ciktisinin sanal masaustundeki
+    sol-ust kosesini dondurur (DesktopCoordinates fiziksel piksel
+    cinsindendir, DPI olceklemesinden etkilenmez). Basarisiz olursa None."""
+    try:
+        coords = camera._output.desc.DesktopCoordinates
+        return int(coords.left), int(coords.top)
+    except Exception as exc:
+        logger.warning("dxcam ciktisinin konumu okunamadi: %s", exc)
+        return None
+
+
+def _mss_monitor_origin(monitor_dict):
+    """mss'in monitor sozlugunden (left/top) sol-ust koseyi cikarir."""
+    return int(monitor_dict.get("left", 0)), int(monitor_dict.get("top", 0))
+
+
+def _lookup_mss_origin(monitor_index):
+    """dxcam'in kendi konum bilgisi alinamadiginda yedek: mss uzerinden
+    AYNI numaralandirmayla (list_monitors ile birebir) konum arar."""
+    try:
+        with mss.mss() as sct:
+            physical = sct.monitors[1:]
+            idx = monitor_index if monitor_index < len(physical) else 0
+            return _mss_monitor_origin(physical[idx])
+    except Exception as exc:
+        logger.warning("Yedek monitor konumu da alinamadi: %s", exc)
+        return (0, 0)
+
+
 def list_monitors():
     """Fiziksel monitorlerin kullanici dostu listesini dondurur.
 
@@ -68,7 +114,16 @@ class ScreenCapturer:
         self._mss_inst = None
         self._mss_monitor = None
         self._lock = threading.Lock()
+        # Bu monitorun sanal masaustundeki (overlay'in kullandigi global
+        # koordinat sistemi) sol-ust kosesi. Ikincil bir monitor birincilin
+        # solunda/ustunde duruyorsa negatif olabilir.
+        self.left = 0
+        self.top = 0
         self._init_backend()
+
+    def get_origin(self):
+        """Bu monitorun sanal masaustundeki sol-ust kosesi: (left, top)."""
+        return (self.left, self.top)
 
     def _init_backend(self):
         if _DXCAM_AVAILABLE:
@@ -80,7 +135,14 @@ class ScreenCapturer:
                     # Tek seferlik test yakalama
                     test = self._dxcam_cam.grab()
                     self.backend = "dxcam"
-                    logger.info("Yakalama motoru: dxcam (monitor %s)", self.monitor_index)
+                    origin = _dxcam_output_origin(self._dxcam_cam)
+                    if origin is None:
+                        origin = _lookup_mss_origin(self.monitor_index)
+                    self.left, self.top = origin
+                    logger.info(
+                        "Yakalama motoru: dxcam (monitor %s, konum=%s)",
+                        self.monitor_index, origin,
+                    )
                     return
             except Exception as exc:
                 logger.warning("dxcam baslatilamadi (%s), mss'e dusuluyor", exc)
@@ -90,8 +152,9 @@ class ScreenCapturer:
         monitors = self._mss_inst.monitors
         idx = self.monitor_index + 1 if self.monitor_index + 1 < len(monitors) else 1
         self._mss_monitor = monitors[idx]
+        self.left, self.top = _mss_monitor_origin(self._mss_monitor)
         self.backend = "mss"
-        logger.info("Yakalama motoru: mss (monitor %s)", idx)
+        logger.info("Yakalama motoru: mss (monitor %s, konum=%s)", idx, (self.left, self.top))
 
     def get_resolution(self):
         if self.backend == "dxcam":
