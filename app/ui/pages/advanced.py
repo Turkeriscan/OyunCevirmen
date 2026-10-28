@@ -40,6 +40,12 @@ class AdvancedPage(Page):
         self.sl_conf.setMinimumWidth(px(240))
         g2.row("Okuma güveni eşiği", "Yükseltirsen bulanık okunan yazılar elenir; çok yükseltirsen "
                                      "gerçek yazılar da kaçabilir.", self.sl_conf, True)
+        self.combo_upscale = Combo()
+        self.combo_upscale.addItem("Açık", True)
+        self.combo_upscale.addItem("Kapalı", False)
+        g2.row("Küçük yazıları büyüterek oku", "Okumadan önce görüntüyü 2 kat büyütür; "
+               "küçük fontlu yazılarda isabeti artırır, çok büyük taramaları yavaşlatmaz.",
+               self.combo_upscale)
         self.body.addWidget(g2)
 
         self.body.addSpacing(px(10))
@@ -83,6 +89,7 @@ class AdvancedPage(Page):
         self.sl_conf.valueChanged.connect(ctx.schedule_save)
         for s in (self.st_cols, self.st_rows, self.st_padding, self.st_minlen, self.st_cache):
             s.valueChanged.connect(ctx.schedule_save)
+        self.combo_upscale.currentIndexChanged.connect(ctx.schedule_save)
         self.combo_monitor.currentIndexChanged.connect(self._monitor_changed)
 
     # --------------------------------------------------------- ekranlar
@@ -120,6 +127,8 @@ class AdvancedPage(Page):
         self.st_minlen.setValue(cfg.get("min_text_length", 2), emit=False)
         self.sl_conf.setValue(cfg.get("min_ocr_confidence", 0.45))
         self.st_cache.setValue(cfg.get("max_cache_memory_items", 5000), emit=False)
+        i = self.combo_upscale.findData(bool(cfg.get("ocr_upscale_small_text", True)))
+        self.combo_upscale.setCurrentIndex(i if i >= 0 else 0)
         self.refresh_monitors(select_index=cfg.get("capture_monitor_index", 0))
 
     def save(self, cfg):
@@ -130,4 +139,5 @@ class AdvancedPage(Page):
         cfg["min_text_length"] = self.st_minlen.value()
         cfg["min_ocr_confidence"] = round(self.sl_conf.value(), 2)
         cfg["max_cache_memory_items"] = self.st_cache.value()
+        cfg["ocr_upscale_small_text"] = bool(self.combo_upscale.currentData())
         # capture_monitor_index: _monitor_changed -> orchestrator.change_monitor yonetir

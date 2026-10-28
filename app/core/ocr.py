@@ -19,6 +19,129 @@ import numpy as np
 
 logger = logging.getLogger("OyunCevirmen.ocr")
 
+# UI'daki source_lang kodlarini Windows OCR'in bekledigi BCP-47 dil
+# etiketlerine esler. "zh-cn" gibi bolge bazli etiketler Windows OCR icin
+# geçerli degildir (Windows "zh-Hans"/"zh-Hant" script etiketlerini kullanir).
+LANG_TO_WINDOWS_OCR = {
+    "auto": "en-US",
+    "en": "en-US",
+    "de": "de-DE",
+    "fr": "fr-FR",
+    "es": "es-ES",
+    "it": "it-IT",
+    "pt": "pt-PT",
+    "ru": "ru-RU",
+    "ja": "ja-JP",
+    "ko": "ko-KR",
+    "zh-cn": "zh-Hans",
+    "zh-hans": "zh-Hans",
+    "zh-hant": "zh-Hant",
+    "tr": "tr-TR",
+}
+
+
+def windows_ocr_tag_for(source_lang):
+    """config'teki source_lang kodunu Windows OCR dil etiketine cevirir."""
+    if not source_lang or source_lang == "auto":
+        return LANG_TO_WINDOWS_OCR["auto"]
+    key = source_lang.lower()
+    return LANG_TO_WINDOWS_OCR.get(key, source_lang)
+
+
+def windows_ocr_available_languages():
+    """Bu bilgisayarda kurulu Windows OCR dil paketlerinin etiket kumesini
+    dondurur (kucuk harfe cevrilmis). Alinamazsa bos kume doner."""
+    try:
+        from winsdk.windows.media.ocr import OcrEngine
+        return {lang.language_tag.lower() for lang in OcrEngine.available_recognizer_languages}
+    except Exception as exc:
+        logger.warning("Windows OCR dil listesi alinamadi: %s", exc)
+        return set()
+
+
+def is_windows_ocr_language_installed(source_lang):
+    """Secili kaynak dilin Windows OCR paketi kurulu mu? Liste hic
+    alinamadiysa (beklenmedik durum) engel olmamak icin True doner."""
+    installed = windows_ocr_available_languages()
+    if not installed:
+        return True
+    return windows_ocr_tag_for(source_lang).lower() in installed
+
+
+_ALLOWED_PUNCT = set(".,!?'\"-:;()/%&")
+
+
+def estimate_windows_ocr_confidence(text, box_height=None):
+    """Windows OCR skor dondurmedigi icin, satirin kendisinden ve kutu
+    yuksekliginden makul bir guven tahmini uretir:
+      - harf/rakam orani yuksekse guven artar
+      - beklenmeyen/garip karakter orani yuksekse guven duser
+      - kutu cok kucukse (kucuk fontta okuma hatasi riski) guven duser
+    Boylece arayuzdeki "Okuma guveni esigi" bu motorda da ise yarar."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return 0.0
+
+    total = len(cleaned)
+    alnum = sum(1 for c in cleaned if c.isalnum())
+    weird = sum(1 for c in cleaned if not (c.isalnum() or c.isspace() or c in _ALLOWED_PUNCT))
+
+    alnum_ratio = alnum / total
+    weird_ratio = weird / total
+
+    score = 0.55 + 0.4 * alnum_ratio - 1.3 * weird_ratio
+
+    if total <= 2:
+        score -= 0.15
+
+    if box_height is not None and box_height > 0:
+        if box_height < 11:
+            score -= 0.3
+        elif box_height < 16:
+            score -= 0.12
+
+    return max(0.05, min(0.99, score))
+
+
+# ----------------------------------------------------------- kucuk yazi büyütme
+UPSCALE_FACTOR = 2.0
+# Bundan daha buyuk (genis cekim: tam ekran aninda tarama gibi) kareler
+# buyutulmez; aksi halde islem suresi 4 katina cikar ve program yavaslar.
+UPSCALE_MAX_PIXELS = 1_000_000
+
+
+def maybe_upscale(frame_bgr, enabled):
+    """enabled ve kare yeterince kucukse goruntuyu UPSCALE_FACTOR kadar
+    buyutur (kucuk yazilarin daha net okunmasi icin). (yeni_kare, olcek)
+    dondurur; buyutulmediyse olcek 1.0'dir."""
+    if not enabled or frame_bgr is None:
+        return frame_bgr, 1.0
+    h, w = frame_bgr.shape[:2]
+    if w <= 0 or h <= 0 or w * h > UPSCALE_MAX_PIXELS:
+        return frame_bgr, 1.0
+    new_w, new_h = int(round(w * UPSCALE_FACTOR)), int(round(h * UPSCALE_FACTOR))
+    try:
+        scaled = cv2.resize(frame_bgr, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+    except Exception as exc:
+        logger.warning("Kucuk yazi buyutme basarisiz, orijinal kare kullanilacak: %s", exc)
+        return frame_bgr, 1.0
+    return scaled, UPSCALE_FACTOR
+
+
+def rescale_results(results, factor):
+    """OCR sonuclarinin bbox'larini (buyutulmus kareden) orijinal olcege
+    geri cevirir. factor == 1.0 ise degisiklik yapmaz."""
+    if factor == 1.0 or not results:
+        return results
+    out = []
+    for r in results:
+        l, t, right, b = r.bbox
+        out.append(OCRBoxResult(
+            r.text, r.confidence,
+            (l / factor, t / factor, right / factor, b / factor),
+        ))
+    return out
+
 
 class OCRBoxResult:
     __slots__ = ("text", "confidence", "bbox")
@@ -42,7 +165,16 @@ class WindowsOCREngine:
         import winocr
 
         self._winocr = winocr
-        self.lang = lang if lang and lang != "auto" else "en"
+        self.source_lang = lang if lang and lang != "auto" else "en"
+        self.lang = windows_ocr_tag_for(self.source_lang)
+        if not is_windows_ocr_language_installed(self.source_lang):
+            logger.warning(
+                "Windows OCR dil paketi kurulu degil: %s (%s). Yonetici olarak "
+                "PowerShell'de su komutu calistirin: "
+                "DISM /Online /Add-Capability /CapabilityName:Language.OCR~~~%s~0.0.1.0 "
+                "veya Ayarlar > Çeviri sayfasindan 'EasyOCR' motorunu secin.",
+                self.source_lang, self.lang, self.lang,
+            )
 
     def recognize(self, frame_bgr, offset=(0, 0)):
         from PIL import Image
@@ -86,7 +218,10 @@ class WindowsOCREngine:
             out.append(
                 OCRBoxResult(
                     text=text,
-                    confidence=0.95,  # Windows OCR skor vermez, varsayilan yuksek guven
+                    # Windows OCR skor vermez; harf/sembol oranindan ve kutu
+                    # yuksekliginden makul bir tahmin uretiyoruz ki arayuzdeki
+                    # "Okuma guveni esigi" ayari bu motorda da ise yarasin.
+                    confidence=estimate_windows_ocr_confidence(text, box_height=(b - t)),
                     bbox=(l + ox, t + oy, r + ox, b + oy),
                 )
             )
@@ -226,7 +361,23 @@ class OCRManager:
 
     def recognize(self, frame_bgr, offset=(0, 0)):
         engine = self.get_engine()
-        return engine.recognize(frame_bgr, offset)
+        upscale_enabled = self.config.get("ocr_upscale_small_text", True)
+        processed, factor = maybe_upscale(frame_bgr, upscale_enabled)
+        # Motora offset=(0,0) veririz: once buyutulmus kare uzerindeki
+        # koordinatlari gercek olcege geri ceviririz, GERCEK offset'i ancak
+        # ondan sonra ekleriz (aksi halde offset de yanlislikla olceklenirdi).
+        results = engine.recognize(processed, offset=(0, 0))
+        results = rescale_results(results, factor)
+        ox, oy = offset
+        if ox or oy:
+            results = [
+                OCRBoxResult(
+                    r.text, r.confidence,
+                    (r.bbox[0] + ox, r.bbox[1] + oy, r.bbox[2] + ox, r.bbox[3] + oy),
+                )
+                for r in results
+            ]
+        return results
 
 
 def merge_paragraph_lines(results):
