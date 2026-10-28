@@ -4,9 +4,33 @@ Türkçe dil desteği olmayan oyunlarda ekrandaki yabancı yazıları otomatik
 bulup Türkçeye çeviren ve çeviriyi orijinal yazının tam üstünde gösteren
 masaüstü programı.
 
+## 0. Sıfırdan Kurulum (Yeni/Boş Bir Bilgisayarda)
+
+Üzerinde hiçbir şey (Python, Git, Ollama vb.) kurulu olmayan bir
+bilgisayarda programı ilk kez kuracaksanız:
+
+1. Bu depoyu indirin (yeşil **Code → Download ZIP** veya `git clone
+   https://github.com/Turkeriscan/OyunCevirmen.git`) ve klasörü
+   `C:\OyunCevirmen` olarak açın.
+2. **`Kurulum.bat`** dosyasına çift tıklayın.
+3. Yönetici izni isteyecektir, **Evet**'e tıklayın.
+4. Betik sizin için şunları otomatik yapar: Git/Python/Ollama'yı kurar
+   (eksikse), projeyi hazırlar, Python kütüphanelerini kurar, ekran
+   kartınız varsa GPU'lu OCR'ı kurar, çeviri modelini indirir (~5 GB),
+   Windows OCR dil paketini ekler ve masaüstüne kısayol oluşturur.
+   İnternet hızınıza göre **10-40 dakika** sürebilir; bilgisayarı
+   kapatmayın.
+5. Sonunda "Şimdi başlatmak ister misiniz?" diye sorar — Enter'a basmanız
+   yeterli.
+
+Bu betiği zaten kurulu bir sistemde de çalıştırabilirsiniz; eksik/bozuk
+bir şey varsa tamamlar, projeyi GitHub'daki son sürüme günceller,
+zaten kurulu olanları atlar.
+
 ## 1. Nasıl Başlatılır
 
-En kolay yol: **Masaüstündeki "Oyun Çevirmen" kısayoluna çift tıklamak.**
+Kurulum tamamlandıktan sonra, en kolay yol: **Masaüstündeki "Oyun
+Çevirmen" kısayoluna çift tıklamak.**
 
 Alternatif olarak:
 - `C:\OyunCevirmen\OyunCevirmenBaslat.bat` dosyasına çift tıklayın.
@@ -67,33 +91,32 @@ Oyununuzun grafik ayarlarından "Pencere Modu" / "Display Mode" seçeneğini
 
 ## 4. Ayarları Değiştirme
 
-Ayarlar `C:\OyunCevirmen\config.json` dosyasında tutulur. Program ilk
-çalıştığında bu dosyayı otomatik oluşturur. Düzenlemek için:
+Program açıldığında kendi **kontrol paneli** penceresi açılır (yoksa
+sistem tepsisindeki simgeye çift tıklayın). Soldaki menüden sayfalar
+arasında geçin:
 
-- Sistem tepsisi simgesine sağ tıklayıp **"Ayarları Aç (config.json)"**
-  seçeneğine tıklayın (Notepad ile açılır), **veya**
-- Dosyayı doğrudan herhangi bir metin editörüyle açın.
+- **Ana sayfa:** F9/F10'u fareyle tetikleyin, anlık durum (Ollama, GPU,
+  OCR motoru, önbellekteki çeviri sayısı) ve son çevirilerin listesi.
+- **Çeviri:** OCR/çeviri motoru, Ollama modeli, kaynak dil; "Çeviriyi
+  dene" kutusuyla ayarı oyuna girmeden test edebilirsiniz.
+- **Görünüm:** Font boyutu, saydamlık, renkler — yandaki mini önizleme
+  değişikliği anında gösterir. Hazır stiller (Altyazı sarısı, Yüksek
+  kontrast, Kâğıt...) tek tıkla uygulanır.
+- **Kısayollar:** F9/F10/F11 tuşlarını değiştirin.
+- **Performans:** Canlı mod tarama sıklığı/ızgarası, filtre eşikleri,
+  **izlenecek ekran** (birden fazla monitörünüz varsa, oyunun açık
+  olduğu ekranı isme göre seçersiniz — değişiklik anında uygulanır,
+  yeniden başlatmaya gerek yoktur) ve **"Çeviri hafızasını sil"**
+  butonu (modeli değiştirdiyseniz veya eski/bozuk çevirilerden
+  kurtulmak isterseniz).
+- **Günlük:** Programın yaptığı her şeyin canlı akışı; bir sorun olursa
+  buraya bakın.
 
-Değişiklik yaptıktan sonra programı **yeniden başlatın** (ayarlar sadece
-açılışta okunur).
-
-Önemli ayarlar:
-
-| Alan | Açıklama | Varsayılan |
-|------|----------|------------|
-| `ocr_engine` | Yazı tanıma motoru: `"windows"` (kurulum gerektirmez, varsayılan) veya `"easyocr"` (GPU/CUDA, daha yavaş ilk yüklemede ama bazı yazı tiplerinde daha isabetli olabilir) | `"windows"` |
-| `translate_engine` | Çeviri motoru: `"ollama"` (yerel, GPU, internetsiz çalışır) veya `"google"` (internet gerektirir, yedek) | `"ollama"` |
-| `ollama_model` | Kullanılacak Ollama modeli | `"aya-expanse:8b"` |
-| `source_lang` | Kaynak dil (OCR için). `"auto"` İngilizce olarak kabul edilir | `"auto"` |
-| `font_size` / `min_font_size` | Çeviri yazısının başlangıç ve en küçük (sığdırma sırasında) font boyutu | `18` / `10` |
-| `overlay_opacity` | Çeviri kutusunun arka plan saydamlığı (0.0-1.0) | `0.72` |
-| `overlay_bg_color` / `overlay_text_color` | Kutu arka plan / yazı rengi (hex) | `#141414` / `#FFFFFF` |
-| `hotkey_instant` / `hotkey_live_toggle` / `hotkey_quit` | Kısayol tuşları | `f9` / `f10` / `f11` |
-| `live_scan_interval` | Canlı modda ekranın kaç saniyede bir kontrol edileceği | `0.45` |
-| `live_grid_cols` / `live_grid_rows` | Canlı modda ekranın kaça bölüneceği (değişen bölge tespiti için) | `6` / `4` |
-| `min_text_length` | Bu uzunluktan kısa metinler çevrilmez | `2` |
-| `min_ocr_confidence` | Bu güven skorunun altındaki OCR sonuçları çevrilmez (0.0-1.0) | `0.45` |
-| `capture_monitor_index` | Birden fazla monitörünüz varsa, oyunun açık olduğu monitörün indeksi (0 = birincil monitör, 1 = ikincisi, ...) | `0` |
+Değişikliklerin neredeyse tamamı **anında** uygulanır ve otomatik olarak
+`config.json` dosyasına kaydedilir — ayrıca kaydetmeniz gerekmez.
+Dosyayı elle düzenlemek isterseniz de `C:\OyunCevirmen\config.json`
+içinde aynı ayarları bulabilirsiniz, ama bunun için programı kapatmanız
+gerekir.
 
 ## 5. OCR ve Çeviri Motorları Hakkında
 
@@ -176,8 +199,9 @@ yapılmadan anında gösterilir.
 
 **Oyun ikinci bir monitörde ama çeviri hiç çıkmıyor**
 - Ekran yakalama tek seferde tek bir monitörü tarar (oyunlarda performans
-  için gereklidir). `config.json` içindeki `capture_monitor_index`
-  değerini oyunun açık olduğu monitöre göre değiştirin (0, 1, 2, ...).
+  için gereklidir). Kontrol paneli → **Performans** → **"İzlenecek
+  ekran"** menüsünden oyunun açık olduğu ekranı seçin; değişiklik anında
+  uygulanır, programı yeniden başlatmanıza gerek yoktur.
 
 ## 7. Klasör Yapısı (bilgi amaçlı)
 
@@ -194,12 +218,15 @@ C:\OyunCevirmen\
 │   │   ├── cache.py          (bellek + SQLite ceviri onbellegi)
 │   │   ├── textfilter.py     (akilli filtreleme kurallari)
 │   │   ├── hotkeys.py        (F9/F10/F11 global kisayollar)
-│   │   └── tray.py           (sistem tepsisi simgesi/menusu)
+│   │   ├── tray.py           (sistem tepsisi simgesi/menusu)
+│   │   └── mainwindow.py      (kontrol paneli / ayarlar arayuzu)
 │   └── assets\icon.png, icon.ico
 ├── venv\                     (Python sanal ortami)
 ├── cache\translations.sqlite3
 ├── logs\oyuncevirmen.log
 ├── config.json               (ilk calistirmada otomatik olusur)
-├── OyunCevirmenBaslat.bat
+├── OyunCevirmenBaslat.bat     (programi baslatir)
+├── Kurulum.bat                (sifirdan kurulum - bkz. Bolum 0)
+├── kurulum.ps1
 └── KULLANIM.md                (bu dosya)
 ```

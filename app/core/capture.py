@@ -26,6 +26,38 @@ except Exception as exc:  # pragma: no cover
 import mss
 
 
+def list_monitors():
+    """Fiziksel monitorlerin kullanici dostu listesini dondurur.
+
+    Donen 'index' degeri, config'teki capture_monitor_index ile AYNI
+    numaralandirmayi kullanir (0 = ilk fiziksel monitor, ScreenCapturer'in
+    kendisinin kullandigi numaralandirmayla birebir eslesir).
+    """
+    results = []
+    try:
+        with mss.mss() as sct:
+            physical = sct.monitors[1:]
+            for i, mon in enumerate(physical):
+                name = mon.get("name") or f"Ekran {i + 1}"
+                primary = bool(mon.get("is_primary", i == 0))
+                text = f"Ekran {i + 1}: {name} — {mon['width']}×{mon['height']}"
+                if primary:
+                    text += " (Birincil)"
+                results.append({
+                    "index": i,
+                    "label": text,
+                    "width": mon["width"],
+                    "height": mon["height"],
+                    "primary": primary,
+                })
+    except Exception as exc:
+        logger.warning("Monitor listesi alinamadi: %s", exc)
+
+    if not results:
+        results = [{"index": 0, "label": "Ekran 1 (varsayılan)", "width": 0, "height": 0, "primary": True}]
+    return results
+
+
 class ScreenCapturer:
     """Tum ekrani (veya tek bir monitoru) yakalayan sinif."""
 

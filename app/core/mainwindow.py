@@ -24,6 +24,7 @@ import threading
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from app import config as config_mod
+from app.core import capture as capture_mod
 from app.core import theme as T
 
 logger = logging.getLogger("OyunCevirmen.mainwindow")
@@ -970,10 +971,15 @@ class MainWindow(QtWidgets.QWidget):
         self.spin_cache.setSingleStep(100)
         g3.addWidget(Field("Bellekte tutulacak çeviri", self.spin_cache,
                            "Tümü ayrıca diske kaydedilir; program kapanınca kaybolmaz."), 0, 0)
-        self.spin_monitor = QtWidgets.QSpinBox()
-        self.spin_monitor.setRange(0, 8)
-        g3.addWidget(Field("Monitör", self.spin_monitor,
-                           "Birden fazla ekranın varsa. Değişiklik yeniden başlatınca geçerli olur."), 0, 1)
+        monitor_row = QtWidgets.QHBoxLayout()
+        monitor_row.setSpacing(8)
+        self.combo_monitor = QtWidgets.QComboBox()
+        btn_refresh_monitors = QtWidgets.QPushButton("Yenile")
+        btn_refresh_monitors.clicked.connect(self._refresh_monitors)
+        monitor_row.addWidget(self.combo_monitor, 1)
+        monitor_row.addWidget(btn_refresh_monitors)
+        g3.addWidget(Field("İzlenecek ekran", monitor_row,
+                           "Oyunun açık olduğu ekranı seç. Değişiklik anında uygulanır."), 0, 1)
         cache_row = QtWidgets.QHBoxLayout()
         self.btn_clear_cache = QtWidgets.QPushButton("Çeviri hafızasını sil")
         self.btn_clear_cache.setObjectName("Danger")
@@ -1009,6 +1015,32 @@ class MainWindow(QtWidgets.QWidget):
             self._flash("Çeviri hafızası silindi")
         except Exception as exc:
             logger.error("Onbellek temizlenemedi: %s", exc)
+        self._refresh_status()
+
+    # ------------------------------------------------------- monitor secimi
+    def _refresh_monitors(self, select_index=None):
+        if select_index is None:
+            select_index = self.combo_monitor.currentData()
+
+        self.combo_monitor.blockSignals(True)
+        self.combo_monitor.clear()
+        for mon in capture_mod.list_monitors():
+            self.combo_monitor.addItem(mon["label"], userData=mon["index"])
+        idx = self.combo_monitor.findData(select_index)
+        self.combo_monitor.setCurrentIndex(idx if idx >= 0 else 0)
+        self.combo_monitor.blockSignals(False)
+
+    def _on_monitor_changed(self, *_):
+        if self._loading:
+            return
+        new_index = self.combo_monitor.currentData()
+        if new_index is None:
+            return
+        ok = self.orchestrator.change_monitor(new_index)
+        if ok:
+            self._flash("İzlenecek ekran değiştirildi")
+        else:
+            self._flash("Ekran değiştirilemedi, günlüğe bakın")
         self._refresh_status()
 
     # ------------------------------------------------------- gunluk sayfasi
@@ -1068,7 +1100,7 @@ class MainWindow(QtWidgets.QWidget):
         self.spin_min_len.setValue(cfg.get("min_text_length", 2))
         self.spin_min_conf.setValue(cfg.get("min_ocr_confidence", 0.45))
         self.spin_cache.setValue(cfg.get("max_cache_memory_items", 5000))
-        self.spin_monitor.setValue(cfg.get("capture_monitor_index", 0))
+        self._refresh_monitors(select_index=cfg.get("capture_monitor_index", 0))
         self._loading = False
         self._sync_hotkey_labels()
 
@@ -1083,7 +1115,7 @@ class MainWindow(QtWidgets.QWidget):
             self.combo_ocr, self.combo_translate, self.combo_model, self.edit_host,
             self.combo_source_lang, self.spin_font, self.spin_min_font,
             self.slider_opacity, self.spin_interval, self.spin_cols, self.spin_rows,
-            self.spin_min_len, self.spin_min_conf, self.spin_cache, self.spin_monitor,
+            self.spin_min_len, self.spin_min_conf, self.spin_cache,
             self.spin_padding,
         ]
         for widget in widgets_simple:
@@ -1101,6 +1133,7 @@ class MainWindow(QtWidgets.QWidget):
         self.row_instant.changed.connect(self._schedule_save)
         self.row_live.changed.connect(self._schedule_save)
         self.row_quit.changed.connect(self._schedule_save)
+        self.combo_monitor.currentIndexChanged.connect(self._on_monitor_changed)
 
         # Onizleme kaydetmeyi beklemeden aninda tepki versin
         for w in (self.spin_font, self.spin_min_font, self.slider_opacity):
@@ -1153,7 +1186,8 @@ class MainWindow(QtWidgets.QWidget):
         cfg["min_text_length"] = self.spin_min_len.value()
         cfg["min_ocr_confidence"] = round(self.spin_min_conf.value(), 2)
         cfg["max_cache_memory_items"] = self.spin_cache.value()
-        cfg["capture_monitor_index"] = self.spin_monitor.value()
+        # capture_monitor_index _on_monitor_changed uzerinden ayri yonetiliyor
+        # (secilir secilmez aninda uygulanmasi gerekiyor, "kaydet" dongusunu beklemez)
 
         config_mod.save_config(cfg)
 

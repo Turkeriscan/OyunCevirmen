@@ -352,6 +352,36 @@ class Orchestrator:
         self.recent.appendleft((time.time(), original, translated))
         self.recent_version += 1
 
+    # ------------------------------------------------------- monitor secimi
+    def change_monitor(self, index):
+        """Yakalanacak monitoru calisirken degistirir (program yeniden
+        baslatilmadan). Aktif bir mod varsa once guvenli sekilde durdurulur."""
+        with self._mode_lock:
+            if self.mode == self.MODE_LIVE:
+                self._stop_live_locked()
+                self.overlay.hide_threadsafe()
+            elif self.mode == self.MODE_INSTANT:
+                self.mode = self.MODE_NONE
+                self.overlay.hide_threadsafe()
+
+        try:
+            new_capturer = capture_mod.ScreenCapturer(monitor_index=index)
+        except Exception as exc:
+            logger.error("Monitor degistirilemedi (%s): %s", index, exc)
+            return False
+
+        old_capturer = self.capturer
+        self.capturer = new_capturer
+        try:
+            old_capturer.close()
+        except Exception:
+            pass
+
+        self.config["capture_monitor_index"] = index
+        config_mod.save_config(self.config)
+        logger.info("Yakalanacak monitor degistirildi: %s", index)
+        return True
+
     # --------------------------------------------------------------- F11
     def request_quit(self):
         logger.info("Cikis istendi, kapatiliyor...")
