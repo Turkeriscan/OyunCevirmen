@@ -77,6 +77,24 @@ class TranslationCache:
         while len(self._mem) > self.max_memory_items:
             self._mem.popitem(last=False)
 
+    def count(self):
+        """Diskte kayitli toplam ceviri sayisi."""
+        try:
+            row = self._conn.execute("SELECT COUNT(*) FROM translations").fetchone()
+            return int(row[0]) if row else 0
+        except Exception:
+            return 0
+
+    def clear(self):
+        """Hem bellek hem disk onbellegini bosaltir."""
+        with self._lock:
+            self._mem.clear()
+        try:
+            self._conn.execute("DELETE FROM translations")
+            self._conn.commit()
+        except Exception:
+            pass
+
     def close(self):
         try:
             self._conn.close()

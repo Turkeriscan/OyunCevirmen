@@ -10,6 +10,7 @@ Kisayollar:
           yeniden okunur ve cevrilir.
     F11 - Programi kapat.
 """
+import collections
 import logging
 import logging.handlers
 import os
@@ -156,6 +157,9 @@ class Orchestrator:
         self.overlay = overlay_mod.OverlayController(app, config)
 
         self.mode = self.MODE_NONE
+        # Kontrol panelindeki "Son ceviriler" listesi icin: (zaman, orijinal, ceviri)
+        self.recent = collections.deque(maxlen=40)
+        self.recent_version = 0
         self._mode_lock = threading.Lock()
         self._live_stop_event = threading.Event()
         self._live_thread = None
@@ -329,10 +333,24 @@ class Orchestrator:
             logger.debug("OCR: %r (conf=%.2f) -> %r", r.text, r.confidence, translated)
             if not translated:
                 continue
+            self._remember(r.text, translated)
             l, t, right, b = r.bbox
             rect = QtCore.QRect(int(l), int(t), int(right - l), int(b - t))
             boxes.append(overlay_mod.TranslationBox(rect, translated))
         return boxes
+
+    def _remember(self, original, translated):
+        """Ayni cumle canli modda tekrar tekrar gelir; listede sadece bir kez
+        (en ustte) dursun."""
+        for item in list(self.recent):
+            if item[1] == original:
+                try:
+                    self.recent.remove(item)
+                except ValueError:
+                    pass
+                break
+        self.recent.appendleft((time.time(), original, translated))
+        self.recent_version += 1
 
     # --------------------------------------------------------------- F11
     def request_quit(self):
