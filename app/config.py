@@ -46,6 +46,15 @@ DEFAULT_CONFIG = {
     # Performans
     "max_cache_memory_items": 5000,
     "capture_monitor_index": 0,
+    # Ceviri kutularinin stili: "box" (kutu) | "subtitle" (altyazi) | "band" (serit)
+    "overlay_style": "box",
+    # Ceviri yazi tipi: "plex" (programla gelir) | "segoe" (Windows) | "serif" (Newsreader)
+    "overlay_font": "plex",
+    # Arayuz durumu
+    "onboarding_done": False,
+    "mini_panel_enabled": False,
+    "mini_panel_pos": None,
+    "window_geometry": None,
     # Log seviyesi
     "log_level": "INFO",
 }

@@ -10,7 +10,7 @@ Windows masaüstü uygulaması.
 - **OCR:** Windows OCR (varsayılan, kurulum gerektirmez) veya EasyOCR (GPU/CUDA hızlandırmalı).
 - **Çeviri:** Ollama ile yerel, GPU hızlandırmalı çeviri (varsayılan model: `aya-expanse:8b`) + Google Translate yedek motoru.
 - **Overlay:** PyQt6 ile şeffaf, tıklamaları geçiren, her zaman üstte kalan ve `WDA_EXCLUDEFROMCAPTURE` ile ekran yakalamalardan gizlenen pencere.
-- **Kontrol paneli:** Durum göstergesi (Ollama/GPU/OCR/çeviri motoru), canlı ayar değişiklikleri, kısayol düzenleme, canlı günlük görüntüleyici.
+- **Kontrol paneli:** Sinema altyazısı temalı, özel çerçeveli pencere. Son çeviriyi büyük perdede gösteren Sahne sayfası ve SRT tarzı akış, oyundaki çizimin birebir önizlemesi (Kutu / Altyazı / Şerit stilleri), tıklayıp tuşa basarak kısayol atama, ilk açılış rehberi ve sistem kontrolü, oyun sırasında köşede duran mini panel.
 - **Modlar:** F9 anlık tarama, F10 canlı (sadece değişen bölgeleri izleyen) mod, F11 çıkış.
 - **Akıllı filtreleme + önbellek:** Kısa/anlamsız/zaten Türkçe metinleri atlar; çevirileri bellek + SQLite'ta önbellekler.
 
@@ -40,11 +40,12 @@ app/
     ├── ocr.py           Windows OCR / EasyOCR / PaddleOCR
     ├── translate.py      Ollama + Google Translate
     ├── overlay.py         Şeffaf overlay penceresi
-    ├── mainwindow.py       Kontrol paneli / ayarlar arayüzü
     ├── cache.py            Çeviri önbelleği
     ├── textfilter.py        Akıllı filtreleme kuralları
     ├── hotkeys.py           Global kısayollar
     └── tray.py              Sistem tepsisi simgesi
+app/ui/                      Kontrol paneli, rehber, mini panel, tema
+app/assets/fonts/            IBM Plex ve Newsreader (SIL OFL)
 ```
 
 ## Lisans

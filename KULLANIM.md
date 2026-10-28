@@ -89,28 +89,54 @@ parçasıdır. Bu sayede:
 Oyununuzun grafik ayarlarından "Pencere Modu" / "Display Mode" seçeneğini
 **Borderless / Windowed Fullscreen / Pencereli Tam Ekran** olarak ayarlayın.
 
-## 4. Ayarları Değiştirme
+## 4. Kontrol Paneli ve Ayarlar
 
-Program açıldığında kendi **kontrol paneli** penceresi açılır (yoksa
-sistem tepsisindeki simgeye çift tıklayın). Soldaki menüden sayfalar
-arasında geçin:
+Program açıldığında kendi **kontrol paneli** açılır (kapattıysanız sistem
+tepsisindeki simgeye çift tıklayın). İlk açılışta dört adımlık bir
+**karşılama rehberi** çıkar: programın ne yaptığını, oyunun neden
+kenarlıksız pencere modunda açılması gerektiğini ve kısayolları anlatır,
+son adımda Ollama, çeviri modeli, ekran kartı ve yazı okumayı sizin için
+kontrol eder. Rehbere istediğiniz zaman **Gelişmiş → Karşılama rehberi**
+ile geri dönebilirsiniz.
 
-- **Ana sayfa:** F9/F10'u fareyle tetikleyin, anlık durum (Ollama, GPU,
-  OCR motoru, önbellekteki çeviri sayısı) ve son çevirilerin listesi.
-- **Çeviri:** OCR/çeviri motoru, Ollama modeli, kaynak dil; "Çeviriyi
-  dene" kutusuyla ayarı oyuna girmeden test edebilirsiniz.
-- **Görünüm:** Font boyutu, saydamlık, renkler — yandaki mini önizleme
-  değişikliği anında gösterir. Hazır stiller (Altyazı sarısı, Yüksek
-  kontrast, Kâğıt...) tek tıkla uygulanır.
-- **Kısayollar:** F9/F10/F11 tuşlarını değiştirin.
-- **Performans:** Canlı mod tarama sıklığı/ızgarası, filtre eşikleri,
-  **izlenecek ekran** (birden fazla monitörünüz varsa, oyunun açık
-  olduğu ekranı isme göre seçersiniz — değişiklik anında uygulanır,
-  yeniden başlatmaya gerek yoktur) ve **"Çeviri hafızasını sil"**
-  butonu (modeli değiştirdiyseniz veya eski/bozuk çevirilerden
-  kurtulmak isterseniz).
-- **Günlük:** Programın yaptığı her şeyin canlı akışı; bir sorun olursa
-  buraya bakın.
+Pencerenin üst bandında programın o anki durumu (Beklemede / Çeviriler
+ekranda / Canlı mod ve süre sayacı), alt bandında çeviri motoru, yazı
+okuma, ekran kartı belleği ve hafızadaki çeviri sayısı görünür. Pencere
+kenarlarından boyutlandırılabilir, ekran kenarına sürükleyince yapışır;
+boyutu ve konumu hatırlanır. Ctrl + 1…6 ile sayfalar arasında geçilir.
+
+- **Sahne:** Oyunda yakalanan son çeviri büyük perdede altyazı gibi
+  belirir, orijinali altında görünür. Altındaki iki düğme Anında tara ve
+  Canlı modu fareyle açar/kapatır. Sağdaki **Akış**, oturum boyunca
+  çevrilen her satırı bir altyazı dosyasındaki gibi numarası ve zaman
+  koduyla listeler; satıra sağ tıklayıp kopyalayabilir, üstteki düğmeyle
+  tüm akışı `.srt` biçiminde panoya alabilirsiniz.
+- **Çeviri:** Yazı okuma (OCR) ve çeviri motoru, Ollama modeli, oyunun
+  dili. **Dene** bölümü, yazdığınız cümleyi seçili motorla çevirip süresini
+  gösterir.
+- **Görünüm:** Çevirilerin oyunda nasıl duracağı. Üstteki küçük oyun
+  sahnesi, oyundaki çizimin birebir aynısıdır; göz simgesine basılı
+  tutunca çeviriler kalkar ve orijinal oyun yazısını görürsünüz. Üç stil
+  vardır: **Kutu** (yarı saydam kutu), **Altyazı** (kutu yok; film
+  altyazısı gibi kenarlı yazı, altındaki orijinali yumuşak bir gölgeyle
+  örter) ve **Şerit** (kenardan kenara koyu şerit). Yazı tipi, boyut,
+  koyuluk, renkler ve hazır renk takımları da buradadır.
+- **Kısayollar:** "Değiştir"e tıklayıp yeni tuşa (veya Ctrl/Alt/Shift
+  ile birleşimine) basın; Esc vazgeçer. Kayıt sırasında programın kendi
+  kısayolları geçici olarak durur. Aynı tuş iki işe atanırsa uyarır.
+- **Gelişmiş:** Canlı mod tarama aralığı ve ekran bölmesi, filtreler,
+  **izlenecek ekran** (birden fazla monitörünüz varsa oyunun açık olduğu
+  ekranı isme göre seçersiniz; değişiklik anında uygulanır), çeviri
+  hafızası, rehberi yeniden açma ve varsayılana dönme.
+- **Günlük:** Programın kayıtları; uyarılar sarı, hatalar kırmızı.
+  Yalnızca uyarıları veya hataları süzebilir, kopyalayabilirsiniz.
+
+**Mini panel:** Üst banttaki küçük ekran simgesi (veya tepsi menüsündeki
+"Mini paneli göster") oyun oynarken ekranın köşesinde duran küçük bir
+durum göstergesi açar. Sürükleyip istediğiniz yere taşıyın; yeri
+hatırlanır. Üzerindeki iki düğme Anında tara ve Canlı modu açar, son
+çeviri tek satır olarak görünür. Mini panel ekran yakalamalarına
+görünmez, yani program onu okuyup çevirmeye çalışmaz.
 
 Değişikliklerin neredeyse tamamı **anında** uygulanır ve otomatik olarak
 `config.json` dosyasına kaydedilir — ayrıca kaydetmeniz gerekmez.
@@ -199,7 +225,7 @@ yapılmadan anında gösterilir.
 
 **Oyun ikinci bir monitörde ama çeviri hiç çıkmıyor**
 - Ekran yakalama tek seferde tek bir monitörü tarar (oyunlarda performans
-  için gereklidir). Kontrol paneli → **Performans** → **"İzlenecek
+  için gereklidir). Kontrol paneli → **Gelişmiş** → **"İzlenecek
   ekran"** menüsünden oyunun açık olduğu ekranı seçin; değişiklik anında
   uygulanır, programı yeniden başlatmanıza gerek yoktur.
 
@@ -218,9 +244,16 @@ C:\OyunCevirmen\
 │   │   ├── cache.py          (bellek + SQLite ceviri onbellegi)
 │   │   ├── textfilter.py     (akilli filtreleme kurallari)
 │   │   ├── hotkeys.py        (F9/F10/F11 global kisayollar)
-│   │   ├── tray.py           (sistem tepsisi simgesi/menusu)
-│   │   └── mainwindow.py      (kontrol paneli / ayarlar arayuzu)
-│   └── assets\icon.png, icon.ico
+│   │   └── tray.py           (sistem tepsisi simgesi/menusu)
+│   ├── ui\
+│   │   ├── theme.py          (renkler, yazi tipleri, stil sayfasi)
+│   │   ├── frame.py          (ozel pencere cercevesi)
+│   │   ├── mainwindow.py     (kontrol paneli)
+│   │   ├── onboarding.py     (ilk acilis rehberi)
+│   │   ├── minipanel.py      (oyun ici mini panel)
+│   │   ├── widgets.py, icons.py, logo.py
+│   │   └── pages\           (Sahne, Ceviri, Gorunum, Kisayollar, Gelismis, Gunluk)
+│   └── assets\icon.png, icon.ico, fonts\
 ├── venv\                     (Python sanal ortami)
 ├── cache\translations.sqlite3
 ├── logs\oyuncevirmen.log

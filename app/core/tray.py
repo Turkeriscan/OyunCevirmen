@@ -39,7 +39,7 @@ def _ensure_icon():
 
 class TrayApp:
     def __init__(self, config, status_provider, on_toggle_live, on_instant, on_quit,
-                 on_open_window=None):
+                 on_open_window=None, on_toggle_mini=None):
         """
         status_provider: () -> dict(ocr_engine, translate_engine, live_active)
         on_toggle_live, on_instant, on_quit, on_open_window: callback'ler (parametresiz)
@@ -50,32 +50,56 @@ class TrayApp:
         self.on_instant = on_instant
         self.on_quit = on_quit
         self.on_open_window = on_open_window
+        self.on_toggle_mini = on_toggle_mini
         self._icon = None
         self._thread = None
 
+    def _key(self, name, default):
+        parts = (self.config.get(name, default) or default).split("+")
+        return " + ".join(p.capitalize() if len(p) > 3 else p.upper() for p in parts)
+
     def _live_label(self, item):
         st = self.status_provider()
-        return ("Canlı Modu Kapat" if st.get("live_active") else "Canlı Modu Aç") + "  (F10)"
+        verb = "Canlı modu durdur" if st.get("live_active") else "Canlı modu başlat"
+        return f"{verb}    {self._key('hotkey_live_toggle', 'f10')}"
+
+    def _instant_label(self, item):
+        return f"Anında tara    {self._key('hotkey_instant', 'f9')}"
+
+    def _quit_label(self, item):
+        return f"Çıkış    {self._key('hotkey_quit', 'f11')}"
 
     def _status_label(self, item):
         st = self.status_provider()
-        return f"OCR: {st.get('ocr_engine')}  |  Çeviri: {st.get('translate_engine')}"
+        engines = {"ollama": "Ollama", "google": "Google Translate"}
+        ocr = {"windows": "Windows OCR", "easyocr": "EasyOCR"}
+        return (f"Çeviri: {engines.get(st.get('translate_engine'), st.get('translate_engine'))}   "
+                f"Okuma: {ocr.get(st.get('ocr_engine'), st.get('ocr_engine'))}")
 
     def _open_window(self, icon=None, item=None):
         if self.on_open_window:
             self.on_open_window()
+
+    def _mini_label(self, item):
+        st = self.status_provider()
+        return "Mini paneli gizle" if st.get("mini_visible") else "Mini paneli göster"
+
+    def _toggle_mini(self, icon=None, item=None):
+        if self.on_toggle_mini:
+            self.on_toggle_mini()
 
     def _build_menu(self):
         return pystray.Menu(
             pystray.MenuItem(self._status_label, None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
-                "Kontrol Panelini Aç", self._open_window, default=True
+                "Kontrol panelini aç", self._open_window, default=True
             ),
-            pystray.MenuItem("Anında Tara (F9)", lambda icon, item: self.on_instant()),
+            pystray.MenuItem(self._mini_label, self._toggle_mini),
+            pystray.MenuItem(self._instant_label, lambda icon, item: self.on_instant()),
             pystray.MenuItem(self._live_label, lambda icon, item: self.on_toggle_live()),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Çıkış (F11)", lambda icon, item: self.on_quit()),
+            pystray.MenuItem(self._quit_label, lambda icon, item: self.on_quit()),
         )
 
     def start(self):

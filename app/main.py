@@ -32,10 +32,12 @@ from app.core import overlay as overlay_mod
 from app.core import hotkeys as hotkeys_mod
 from app.core import tray as tray_mod
 from app.core import textfilter
-from app.core import mainwindow as mainwindow_mod
+from app.ui import mainwindow as mainwindow_mod
+from app.ui import theme as ui_theme
+from app.ui.minipanel import MiniPanelController
 from app import config as config_mod
 
-from PyQt6 import QtWidgets, QtCore
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 logger = logging.getLogger("OyunCevirmen")
 
@@ -139,6 +141,7 @@ def _rects_overlap(rect_a, rect_b, threshold=0.4):
 class AppBridge(QtCore.QObject):
     quit_signal = QtCore.pyqtSignal()
     show_window_signal = QtCore.pyqtSignal()
+    toggle_mini_signal = QtCore.pyqtSignal()
 
 
 class Orchestrator:
@@ -157,6 +160,8 @@ class Orchestrator:
         self.overlay = overlay_mod.OverlayController(app, config)
 
         self.mode = self.MODE_NONE
+        self.started_at = time.time()      # akistaki zaman kodlari buna gore
+        self.live_started_at = None        # canli mod sure sayaci
         # Kontrol panelindeki "Son ceviriler" listesi icin: (zaman, orijinal, ceviri)
         self.recent = collections.deque(maxlen=40)
         self.recent_version = 0
@@ -169,6 +174,8 @@ class Orchestrator:
         self.bridge = AppBridge()
         self.bridge.quit_signal.connect(self._quit_on_gui_thread)
         self.bridge.show_window_signal.connect(self._show_window_on_gui_thread)
+        self.bridge.toggle_mini_signal.connect(self._toggle_mini_on_gui_thread)
+        self.mini_panel = MiniPanelController(config, self)
 
         self.hotkeys = hotkeys_mod.HotkeyManager(
             config, self.toggle_instant, self.toggle_live, self.request_quit
@@ -180,6 +187,7 @@ class Orchestrator:
             on_instant=self.toggle_instant,
             on_quit=self.request_quit,
             on_open_window=self.request_show_window,
+            on_toggle_mini=self.toggle_mini_panel,
         )
 
     def _status(self):
@@ -187,11 +195,14 @@ class Orchestrator:
             "ocr_engine": self.config.get("ocr_engine"),
             "translate_engine": self.config.get("translate_engine"),
             "live_active": self.mode == self.MODE_LIVE,
+            "mini_visible": self.mini_panel.is_visible(),
         }
 
     def start(self):
         self.hotkeys.start()
         self.tray.start()
+        if self.config.get("mini_panel_enabled"):
+            self.mini_panel.show()
         logger.info("Orkestrasyon basladi. F9=Anlik F10=Canli F11=Cikis")
 
     # ---------------------------------------------------------------- F9
@@ -234,6 +245,7 @@ class Orchestrator:
             if self.mode == self.MODE_INSTANT:
                 self.overlay.hide_threadsafe()
             self.mode = self.MODE_LIVE
+            self.live_started_at = time.time()
             self._live_stop_event.clear()
             self._live_thread = threading.Thread(target=self._live_loop, daemon=True)
             self._live_thread.start()
@@ -242,6 +254,7 @@ class Orchestrator:
     def _stop_live_locked(self):
         self._live_stop_event.set()
         self.mode = self.MODE_NONE
+        self.live_started_at = None
 
     def _live_loop(self):
         interval = self.config.get("live_scan_interval", 0.45)
@@ -399,9 +412,31 @@ class Orchestrator:
 
     def _quit_on_gui_thread(self):
         self.overlay.hide_threadsafe()
+        try:
+            if self.mini_panel.panel is not None:
+                self.mini_panel.panel.hide()
+        except Exception:
+            pass
         if self.main_window is not None:
+            try:
+                self.main_window.apply_now()
+                self.main_window._remember_geometry()
+            except Exception:
+                pass
             self.main_window.hide()
         QtCore.QTimer.singleShot(150, self.app.quit)
+
+    # ----------------------------------------------------------- mini panel
+    def toggle_mini_panel(self):
+        """Herhangi bir thread'den cagrilabilir (tepsi menusu ayri thread'de)."""
+        self.bridge.toggle_mini_signal.emit()
+
+    def _toggle_mini_on_gui_thread(self):
+        self.mini_panel.toggle()
+        try:
+            self.tray.update_menu()
+        except Exception:
+            pass
 
     # ------------------------------------------------------- kontrol paneli
     def request_show_window(self):
@@ -410,6 +445,8 @@ class Orchestrator:
     def _show_window_on_gui_thread(self):
         if self.main_window is None:
             self.main_window = mainwindow_mod.MainWindow(self.config, self)
+        if self.main_window.isMinimized():
+            self.main_window.showNormal()
         self.main_window.show()
         self.main_window.raise_()
         self.main_window.activateWindow()
@@ -422,8 +459,22 @@ def main():
 
     ensure_ollama_running(config.get("ollama_host", "http://127.0.0.1:11434"))
 
+    if os.name == "nt":
+        # Gorev cubugunda Python'un degil, programin kendi simgesi gorunsun
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("OyunCevirmen.App")
+        except Exception:
+            pass
+
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    app.setApplicationName("Oyun Çevirmen")
+    ui_theme.load_fonts()
+    ui_theme.init_scale(app)
+    app.setFont(ui_theme.font("body", 10))
+    app.setStyleSheet(ui_theme.app_stylesheet())
+    app.setWindowIcon(QtGui.QIcon(os.path.join(BASE_DIR, "app", "assets", "icon.ico")))
 
     orchestrator = Orchestrator(app, config)
     orchestrator.start()
