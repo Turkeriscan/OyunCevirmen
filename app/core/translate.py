@@ -38,6 +38,25 @@ SYSTEM_PROMPT_TR = (
 )
 
 
+def _build_context_block(context_lines):
+    """Son birkac cevrilmis satiri modele BAGLAM OLARAK ekler (zamir/hitap
+    tutarliligi icin - orn. bir diyalogda 'o' -> 'sen' tutarli kalsin).
+    Modelin bunlari TEKRAR CEVIRMEMESI veya tekrar ETMEMESI acikca
+    belirtilir; _looks_like_hallucination kontrolu yalnizca asil 'text'
+    parametresiyle calistigi icin bu blok halusinasyon korumasini bozmaz."""
+    if not context_lines:
+        return ""
+    lines = [f'- "{orig}" -> "{trans}"' for orig, trans in context_lines if orig and trans]
+    if not lines:
+        return ""
+    return (
+        "\n\nCONTEXT ONLY - previous lines from this same scene, already "
+        "translated (for pronoun/tone consistency only). Do NOT translate, "
+        "repeat, or reference these in your output; only translate the NEW "
+        "line given in the user message below:\n" + "\n".join(lines)
+    )
+
+
 class OllamaTranslator:
     def __init__(self, host="http://127.0.0.1:11434", model="aya-expanse:8b", timeout=20):
         self.host = host.rstrip("/")
@@ -52,17 +71,19 @@ class OllamaTranslator:
         except Exception:
             return False
 
-    def translate(self, text, source_lang="auto", target_lang="tr", model=None):
+    def translate(self, text, source_lang="auto", target_lang="tr", model=None, context_lines=None):
         # num_predict girdi uzunluguyla orantili: kisa bir oyun ici yazi icin
         # modelin yuzlerce token'lik alakasiz bir metin ("sozluk", "aciklama"
         # vb.) uretip halusinasyon gormesini onler.
         word_count = max(1, len(text.split()))
         num_predict = max(24, min(300, word_count * 5 + 20))
 
+        system_content = SYSTEM_PROMPT_TR + _build_context_block(context_lines)
+
         payload = {
             "model": model or self.model,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT_TR},
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": text},
             ],
             "stream": False,
@@ -150,12 +171,33 @@ class TranslationManager:
             model=config.get("ollama_model", "aya-expanse:8b"),
         )
         self.google = GoogleFallbackTranslator()
+        # Orchestrator bunu baglayip, izin "sorulmadi" (None) durumundayken
+        # kullanicidan bir kez izin istenmesini saglar (bkz. main.py
+        # _request_google_permission). Arayuzsuz/testte None kalabilir.
+        self.on_google_permission_needed = None
 
-    def translate(self, text, source_lang=None, target_lang=None):
+    def _google_fallback_allowed(self):
+        """Ollama BASARISIZ olup YEDEK olarak Google'a gidilmesi gerektiginde
+        bu kontrol edilir (kullanici motor olarak bilerek 'google' secmisse
+        bu fonksiyon hic cagrilmaz - o zaman zaten acik riza vardir)."""
+        allowed = self.config.get("allow_google_fallback")
+        if allowed is None:
+            if self.on_google_permission_needed:
+                try:
+                    self.on_google_permission_needed()
+                except Exception as exc:
+                    logger.warning("Google izin istemi tetiklenemedi: %s", exc)
+            return False
+        return bool(allowed)
+
+    def translate(self, text, source_lang=None, target_lang=None, context_lines=None):
         target_lang = target_lang or self.config.get("target_lang", "tr")
         source_lang = source_lang or self.config.get("source_lang", "auto")
         engine_pref = self.config.get("translate_engine", "ollama")
 
+        # Onbellek anahtari baglamdan BAGIMSIZ kalir: ayni metin, baglam
+        # degisse de ayni anahtarla aranir/kaydedilir (aksi halde ayni
+        # satir sahne ilerledikce tekrar tekrar modele gonderilirdi).
         cached = self.cache.get(text, source_lang, target_lang, engine_pref)
         if cached is not None:
             return cached
@@ -167,25 +209,36 @@ class TranslationManager:
         current_model = self.config.get("ollama_model", self.ollama.model)
 
         if engine_pref == "ollama":
-            result = self.ollama.translate(text, source_lang, target_lang, model=current_model)
+            result = self.ollama.translate(
+                text, source_lang, target_lang, model=current_model, context_lines=context_lines
+            )
             if result and _looks_like_hallucination(text, result):
-                logger.warning(
-                    "Ollama supheli/alakasiz ceviri uretti, Google'a geciliyor. "
-                    "Kaynak=%r Model_ciktisi=%r", text[:60], result[:80],
-                )
-                result = self.google.translate(text, source_lang, target_lang)
-                used_engine = "google"
-                if result and _looks_like_hallucination(text, result):
-                    result = None  # Google de supheliyse, hicbir sey gosterme
+                if self._google_fallback_allowed():
+                    logger.warning(
+                        "Ollama supheli/alakasiz ceviri uretti, Google'a geciliyor. "
+                        "Kaynak=%r Model_ciktisi=%r", text[:60], result[:80],
+                    )
+                    result = self.google.translate(text, source_lang, target_lang)
+                    used_engine = "google"
+                    if result and _looks_like_hallucination(text, result):
+                        result = None  # Google de supheliyse, hicbir sey gosterme
+                else:
+                    logger.info("Ollama supheli ceviri uretti, Google izni yok: %r", text[:40])
+                    result = None
             elif not result:
-                logger.info("Ollama basarisiz, Google'a geciliyor: %r", text[:40])
-                result = self.google.translate(text, source_lang, target_lang)
-                used_engine = "google"
+                if self._google_fallback_allowed():
+                    logger.info("Ollama basarisiz, Google'a geciliyor: %r", text[:40])
+                    result = self.google.translate(text, source_lang, target_lang)
+                    used_engine = "google"
+                else:
+                    logger.info("Ollama basarisiz, Google izni yok, cevrilemedi: %r", text[:40])
         else:
             result = self.google.translate(text, source_lang, target_lang)
             used_engine = "google"
             if not result:
-                result = self.ollama.translate(text, source_lang, target_lang, model=current_model)
+                result = self.ollama.translate(
+                    text, source_lang, target_lang, model=current_model, context_lines=context_lines
+                )
                 used_engine = "ollama"
                 if result and _looks_like_hallucination(text, result):
                     result = None

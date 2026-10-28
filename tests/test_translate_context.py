@@ -1,0 +1,119 @@
+"""
+Ceviri modulu testleri: baglam (context) blogu dogru olusturuluyor mu,
+onbellek anahtari baglamdan bagimsiz mi, halusinasyon korumasi hala
+calisiyor mu. Gercek Ollama/internet gerektirmez (HTTP cagrisi mock'lanir).
+"""
+from unittest.mock import MagicMock, patch
+
+from app.core import translate
+
+
+# ------------------------------------------------------- baglam blogu olusturma
+def test_build_context_block_empty_for_no_context():
+    assert translate._build_context_block(None) == ""
+    assert translate._build_context_block([]) == ""
+
+
+def test_build_context_block_formats_pairs():
+    block = translate._build_context_block([("Hello", "Merhaba"), ("Bye", "Güle güle")])
+    assert "Hello" in block and "Merhaba" in block
+    assert "Bye" in block and "Güle güle" in block
+    assert "CONTEXT ONLY" in block
+    assert "Do NOT translate" in block
+
+
+def test_build_context_block_skips_empty_pairs():
+    block = translate._build_context_block([("", ""), ("A", "B")])
+    assert block.count(" -> ") == 1
+
+
+# --------------------------------------------------- onbellek baglamdan bagimsiz
+def test_cache_key_independent_of_context(tmp_path):
+    from app.core import cache as cache_mod
+
+    config = {
+        "translate_engine": "ollama", "ollama_host": "http://127.0.0.1:11434",
+        "ollama_model": "test-model", "source_lang": "auto", "target_lang": "tr",
+        "max_cache_memory_items": 100,
+    }
+    manager = translate.TranslationManager(config)
+    # Gercek uygulama onbellegine/singleton'a dokunmamak icin test'e ozel,
+    # gecici bir SQLite onbellegi enjekte ediyoruz.
+    manager.cache = cache_mod.TranslationCache(
+        max_memory_items=100, db_path=str(tmp_path / "test_cache.sqlite3")
+    )
+
+    call_count = {"n": 0}
+
+    def fake_translate(self, text, source_lang="auto", target_lang="tr", model=None, context_lines=None):
+        call_count["n"] += 1
+        return "Merhaba Dünya"
+
+    with patch.object(translate.OllamaTranslator, "translate", fake_translate):
+        r1 = manager.translate("Hello World", context_lines=None)
+        r2 = manager.translate("Hello World", context_lines=[("A", "B")])
+
+    assert r1 == r2 == "Merhaba Dünya"
+    # Ikinci cagri FARKLI baglamla geldi ama AYNI metin -> onbellekten gelmeli,
+    # modele ikinci kez gidilmemeli.
+    assert call_count["n"] == 1
+
+
+# ------------------------------------------------------------ ollama entegrasyonu
+def test_ollama_translator_includes_context_in_system_message():
+    translator = translate.OllamaTranslator(host="http://127.0.0.1:11434", model="m")
+    captured = {}
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"message": {"content": "Merhaba"}}
+
+    def fake_post(url, json=None, timeout=None):
+        captured["payload"] = json
+        return _FakeResponse()
+
+    with patch.object(translator._session, "post", side_effect=fake_post):
+        result = translator.translate(
+            "Hello", context_lines=[("Hi there", "Merhaba orada")]
+        )
+
+    assert result == "Merhaba"
+    system_msg = captured["payload"]["messages"][0]["content"]
+    assert "Hi there" in system_msg
+    assert "Merhaba orada" in system_msg
+    assert "CONTEXT ONLY" in system_msg
+    # Asil cevrilecek metin hala ayri, kullanici mesaji olarak gidiyor
+    assert captured["payload"]["messages"][1]["content"] == "Hello"
+
+
+def test_ollama_translator_without_context_has_clean_system_message():
+    translator = translate.OllamaTranslator(host="http://127.0.0.1:11434", model="m")
+    captured = {}
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"message": {"content": "Merhaba"}}
+
+    def fake_post(url, json=None, timeout=None):
+        captured["payload"] = json
+        return _FakeResponse()
+
+    with patch.object(translator._session, "post", side_effect=fake_post):
+        translator.translate("Hello", context_lines=None)
+
+    assert "CONTEXT ONLY" not in captured["payload"]["messages"][0]["content"]
+
+
+# -------------------------------------------------- halusinasyon korumasi bozulmadi
+def test_hallucination_guard_still_works_with_context_param():
+    """Baglam eklenmis olsa bile halusinasyon kontrolu (_looks_like_hallucination)
+    hala asil kaynak/ceviri ciftine bakarak calismali."""
+    long_fake = "Bu çok uzun ve alakasız bir açıklama metni " * 5
+    assert translate._looks_like_hallucination("Hi", long_fake)
+    assert not translate._looks_like_hallucination("Hi", "Merhaba")
