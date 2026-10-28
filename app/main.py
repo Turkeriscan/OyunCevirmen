@@ -588,6 +588,10 @@ class Orchestrator:
             self._translate_executor.shutdown(wait=False, cancel_futures=True)
         except Exception:
             pass
+        try:
+            self.capturer.close()
+        except Exception:
+            pass
         self.bridge.quit_signal.emit()
 
     def _quit_on_gui_thread(self):

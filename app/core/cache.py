@@ -45,9 +45,12 @@ class TranslationCache:
             if key in self._mem:
                 self._mem.move_to_end(key)
                 return self._mem[key]
-        row = self._conn.execute(
-            "SELECT translated_text FROM translations WHERE key = ?", (key,)
-        ).fetchone()
+        try:
+            row = self._conn.execute(
+                "SELECT translated_text FROM translations WHERE key = ?", (key,)
+            ).fetchone()
+        except Exception:
+            return None
         if row:
             with self._lock:
                 self._mem[key] = row[0]
