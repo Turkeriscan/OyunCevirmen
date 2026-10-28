@@ -27,6 +27,15 @@ Bu betiği zaten kurulu bir sistemde de çalıştırabilirsiniz; eksik/bozuk
 bir şey varsa tamamlar, projeyi GitHub'daki son sürüme günceller,
 zaten kurulu olanları atlar.
 
+**Belirli bir sürümü kurmak isterseniz:** Hem `Kurulum.bat`/`kurulum.ps1`
+hem de `Guncelle.bat`/`guncelle.ps1`, bir `$Surum` parametresi kabul eder.
+Boş bırakılırsa (varsayılan) her zaman en güncel `main` dalı kurulur/
+güncellenir. Belirli bir etiketi/dalı sabitlemek için PowerShell'den:
+```
+powershell -ExecutionPolicy Bypass -File kurulum.ps1 -Surum v1.2.0
+powershell -ExecutionPolicy Bypass -File guncelle.ps1 -Surum v1.2.0
+```
+
 ## 1. Nasıl Başlatılır
 
 Kurulum tamamlandıktan sonra, en kolay yol: **Masaüstündeki "Oyun
@@ -113,7 +122,14 @@ boyutu ve konumu hatırlanır. Ctrl + 1…6 ile sayfalar arasında geçilir.
   tüm akışı `.srt` biçiminde panoya alabilirsiniz.
 - **Çeviri:** Yazı okuma (OCR) ve çeviri motoru, Ollama modeli, oyunun
   dili. **Dene** bölümü, yazdığınız cümleyi seçili motorla çevirip süresini
-  gösterir.
+  gösterir. "Oyunun dili" Windows OCR içinse ve o dilin paketi kurulu
+  değilse, hemen altında bir uyarı ve kurulum yolu çıkar. **"Ollama
+  çalışmazsa Google'a gönder"** ayarı, Ollama kapalıyken ekrandaki
+  yazıların yedek olarak internete (Google Translate'e) gönderilip
+  gönderilmeyeceğini belirler — ilk ihtiyaç anında bir kez sorulur,
+  burada istediğiniz zaman değiştirebilirsiniz. Çeviri motoru olarak
+  zaten Google'ı seçtiyseniz bu ayar geçersizdir (zaten açıkça onay
+  vermişsinizdir).
 - **Görünüm:** Çevirilerin oyunda nasıl duracağı. Üstteki küçük oyun
   sahnesi, oyundaki çizimin birebir aynısıdır; göz simgesine basılı
   tutunca çeviriler kalkar ve orijinal oyun yazısını görürsünüz. Üç stil
@@ -125,9 +141,13 @@ boyutu ve konumu hatırlanır. Ctrl + 1…6 ile sayfalar arasında geçilir.
   ile birleşimine) basın; Esc vazgeçer. Kayıt sırasında programın kendi
   kısayolları geçici olarak durur. Aynı tuş iki işe atanırsa uyarır.
 - **Gelişmiş:** Canlı mod tarama aralığı ve ekran bölmesi, filtreler,
-  **izlenecek ekran** (birden fazla monitörünüz varsa oyunun açık olduğu
-  ekranı isme göre seçersiniz; değişiklik anında uygulanır), çeviri
-  hafızası, rehberi yeniden açma ve varsayılana dönme.
+  **"Küçük yazıları büyüterek oku"** (okumadan önce görüntüyü 2 kat
+  büyütür, küçük fontlu yazılarda isabeti artırır; varsayılan açık, çok
+  büyük taramalarda otomatik devre dışı kalıp hızı korur), **izlenecek
+  ekran** (birden fazla monitörünüz varsa oyunun açık olduğu ekranı isme
+  göre seçersiniz; değişiklik anında uygulanır ve çeviriler artık
+  monitörün sanal masaüstündeki gerçek konumuna göre doğru yere çizilir),
+  çeviri hafızası, rehberi yeniden açma ve varsayılana dönme.
 - **Günlük:** Programın kayıtları; uyarılar sarı, hatalar kırmızı.
   Yalnızca uyarıları veya hataları süzebilir, kopyalayabilirsiniz.
 
@@ -146,12 +166,19 @@ gerekir.
 
 ## 5. OCR ve Çeviri Motorları Hakkında
 
-- **Windows OCR** (varsayılan): Kurulum gerektirmez, hızlıdır. Sistem
-  dilinizde ilgili OCR dil paketi kurulu olmalıdır (İngilizce metinler için
-  "English (US)" OCR paketi). Eksikse Windows Ayarlar > Saat ve Dil >
-  Dil ve Bölge > "Tercih ettiğim dilleri ekleyin" üzerinden İngilizce dil
+- **Windows OCR** (varsayılan): Kurulum gerektirmez, hızlıdır. Okuyacağı
+  dilin Windows OCR paketi kurulu olmalıdır. "Oyunun dili" **Otomatik
+  algıla** ise, pratikte sadece **Latin alfabeli diller** (İngilizce,
+  Almanca, Fransızca, İspanyolca, İtalyanca, Portekizce) için işe yarar;
+  Japonca/Korece/Rusça/Çince bir oyun için o dili Çeviri sayfasından
+  doğrudan seçmeniz gerekir. Program her dili doğru Windows dil
+  etiketine çevirir (örn. Almanca → `de-DE`, Çince → `zh-Hans`) ve paket
+  kurulu değilse Çeviri sayfasında dil seçiminin altında otomatik bir
+  uyarı ve kurulum yolu gösterir. Eksikse Windows Ayarlar > Saat ve Dil >
+  Dil ve Bölge > "Tercih ettiğim dilleri ekleyin" üzerinden ilgili dil
   paketini (OCR bileşeniyle birlikte) ekleyebilirsiniz, veya yönetici
-  olarak şu komutu çalıştırabilirsiniz:
+  olarak (dil etiketini kendi dilinizle değiştirerek) şu komutu
+  çalıştırabilirsiniz:
   ```
   DISM /Online /Add-Capability /CapabilityName:Language.OCR~~~en-US~0.0.1.0
   ```
@@ -172,8 +199,13 @@ gerekir.
   içindeki `SYSTEM_PROMPT_TR`) kullanılır. Model RTX 5070'te **tamamen
   GPU üzerinde** çalışır (test edildi: `ollama ps` çıktısında "100% GPU").
 - **Google Translate** (`deep-translator`): Ollama kullanılamazsa (servis
-  kapalıysa, model bozuksa vb.) otomatik olarak devreye girer. İnternet
-  bağlantısı gerektirir.
+  kapalıysa, şüpheli bir çeviri üretirse vb.) yedek olarak devreye girer
+  — ama **sessizce değil**: ilk ihtiyaç anında izin ister (kontrol paneli
+  açıksa bir soru penceresiyle, kapalıysa sistem tepsisi bildirimiyle).
+  İzin vermezseniz o yazı çevrilmez ve alt bantta "Çeviri yapılamıyor"
+  olarak net şekilde görünür; Çeviri sayfasından istediğiniz zaman
+  açıp kapatabilirsiniz. Çeviri motoru olarak zaten "Google Translate"i
+  seçtiyseniz bu soru hiç sorulmaz. İnternet bağlantısı gerektirir.
 
 Çeviriler hem bellekte hem de `cache\translations.sqlite3` dosyasında
 önbelleğe alınır; aynı metin tekrar görüldüğünde yeniden çeviri
@@ -223,11 +255,32 @@ yapılmadan anında gösterilir.
 - `min_ocr_confidence` değerini artırın (örn. `0.6`).
 - `min_text_length` değerini artırın.
 
-**Oyun ikinci bir monitörde ama çeviri hiç çıkmıyor**
+**Oyun ikinci bir monitörde ama çeviri hiç çıkmıyor / yanlış yerde çıkıyor**
 - Ekran yakalama tek seferde tek bir monitörü tarar (oyunlarda performans
   için gereklidir). Kontrol paneli → **Gelişmiş** → **"İzlenecek
   ekran"** menüsünden oyunun açık olduğu ekranı seçin; değişiklik anında
   uygulanır, programı yeniden başlatmanıza gerek yoktur.
+- Çeviriler artık seçilen monitörün sanal masaüstündeki gerçek konumuna
+  göre (ikincil monitör sağda/solda/üstte olsa, hatta negatif koordinatlı
+  olsa bile) doğru yere çizilir. Yine de yanlış yerde çıkıyorsa, Windows
+  görüntü ölçeklemesini (Ayarlar > Ekran > Ölçek) tüm monitörlerde aynı
+  yapmayı deneyin.
+
+**Çeviri motoru olarak Ollama seçili ama hiç çeviri çıkmıyor, Google'a da
+geçmiyor**
+- Ollama kapalı/çalışmıyor olabilir ve Google Translate'e henüz izin
+  verilmemiş olabilir — bu BİLEREK yapılan bir güvenlik seçimidir, izniniz
+  olmadan internete hiçbir şey gönderilmez. Alt bantta "Çeviri yapılamıyor"
+  yazdığını görürseniz, kontrol panelini açın: ya izin isteyen soru
+  penceresi otomatik çıkar, ya da Çeviri sayfasından **"Ollama çalışmazsa
+  Google'a gönder"** ayarını kendiniz açabilirsiniz. Ollama'yı tekrar
+  çalışır hale getirmek isterseniz `ollama serve` komutunu çalıştırın.
+
+**Oyun İngilizce değil (Almanca/Fransızca/İspanyolca vb.) ama bazı yazılar
+"zaten Türkçe" sanılıp atlanıyor**
+- Çeviri sayfasından "Oyunun dili"ni **Otomatik algıla** yerine doğrudan
+  o dile ayarlayın; program o zaman sadece Türkçeye kesin özgü harfler
+  (ğ, ı, ş) görürse metni atlar, aksi halde çevirir.
 
 ## 7. Klasör Yapısı (bilgi amaçlı)
 
@@ -261,5 +314,14 @@ C:\OyunCevirmen\
 ├── OyunCevirmenBaslat.bat     (programi baslatir)
 ├── Kurulum.bat                (sifirdan kurulum - bkz. Bolum 0)
 ├── kurulum.ps1
+├── Guncelle.bat                (GitHub'daki guncellemeyi ceker)
+├── guncelle.ps1
+├── tests\                      (pytest testleri - gercek ekran/Ollama gerektirmez)
+├── pytest.ini
 └── KULLANIM.md                (bu dosya)
+```
+
+Testleri çalıştırmak için (geliştirme ortamında):
+```
+venv\Scripts\python.exe -m pytest
 ```

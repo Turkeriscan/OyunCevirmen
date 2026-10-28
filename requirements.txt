@@ -14,6 +14,9 @@ winocr
 winsdk
 langdetect
 
+# Testler icin (gelistirme ortami)
+pytest
+
 # GPU'lu OCR (EasyOCR) icin AYRICA kurulmasi gerekir (Blackwell/RTX 50xx
 # serisi icin CUDA 12.8 wheel'leri kullanin):
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
