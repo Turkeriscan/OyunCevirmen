@@ -386,8 +386,11 @@ class ValueSlider(QtWidgets.QWidget):
         return self.slider.value() / self._scale
 
     def setValue(self, v):
+        # NOT: QSlider.setValue zaten deger GERCEKTEN degisirse valueChanged
+        # yayinlar (_changed'e bagli); burada ayrica _changed() cagirmak
+        # degisen durumlarda sinyali IKI KEZ yayinlardi. Deger ayniysa Qt
+        # sinyal yaymaz ama metin etiketi zaten dogru degeri gosteriyordur.
         self.slider.setValue(int(round(v * self._scale)))
-        self._changed(self.slider.value())
 
     def _changed(self, raw):
         v = raw / self._scale
