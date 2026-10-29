@@ -90,6 +90,44 @@ def test_allow_google_fallback_garbage_resets_to_none(isolated_config):
     assert cfg["allow_google_fallback"] is None
 
 
+def test_capture_monitor_identity_accepts_none(isolated_config):
+    isolated_config.write_text(json.dumps({"capture_monitor_identity": None}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["capture_monitor_identity"] is None
+
+
+def test_capture_monitor_identity_accepts_valid_dict(isolated_config):
+    identity = {"left": 1920, "top": 0, "width": 1920, "height": 1080}
+    isolated_config.write_text(json.dumps({"capture_monitor_identity": identity}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["capture_monitor_identity"] == identity
+
+
+def test_capture_monitor_identity_rejects_missing_keys(isolated_config):
+    isolated_config.write_text(
+        json.dumps({"capture_monitor_identity": {"left": 0, "top": 0}}), encoding="utf-8"
+    )
+    cfg = config_mod.load_config()
+    assert cfg["capture_monitor_identity"] is None
+
+
+def test_capture_monitor_identity_rejects_non_dict(isolated_config):
+    isolated_config.write_text(
+        json.dumps({"capture_monitor_identity": "ekran 1"}), encoding="utf-8"
+    )
+    cfg = config_mod.load_config()
+    assert cfg["capture_monitor_identity"] is None
+
+
+def test_capture_monitor_identity_rejects_non_int_values(isolated_config):
+    isolated_config.write_text(
+        json.dumps({"capture_monitor_identity": {"left": "cok", "top": 0, "width": 1920, "height": 1080}}),
+        encoding="utf-8",
+    )
+    cfg = config_mod.load_config()
+    assert cfg["capture_monitor_identity"] is None
+
+
 def test_bool_is_not_accepted_as_numeric():
     """Python'da bool, int'in alt sinifidir (True==1); numerik alanlara
     yanlislikla bool sizmasini engelleriz."""

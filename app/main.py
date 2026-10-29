@@ -168,9 +168,25 @@ class Orchestrator:
     def __init__(self, app, config):
         self.app = app
         self.config = config
-        self.capturer = capture_mod.ScreenCapturer(
-            monitor_index=config.get("capture_monitor_index", 0)
-        )
+        # Kaydedilmis MONITOR KIMLIGI (konum+cozunurluk), salt sira
+        # numarasindan daha guvenilir: ekran dizilimi onceki oturumdan
+        # sonra degismisse (yeni monitor eklenmis/cikarilmis) bile dogru
+        # fiziksel ekran bulunur (bkz. capture_mod.resolve_monitor_index).
+        resolved_index = capture_mod.resolve_monitor_index(config)
+        identity_changed = resolved_index != config.get("capture_monitor_index", 0)
+        if identity_changed:
+            logger.info(
+                "Ekran dizilimi degismis: monitor kimligine gore %s -> %s",
+                config.get("capture_monitor_index", 0), resolved_index,
+            )
+            config["capture_monitor_index"] = resolved_index
+        self.capturer = capture_mod.ScreenCapturer(monitor_index=resolved_index)
+        new_identity = capture_mod.get_monitor_identity(resolved_index)
+        if config.get("capture_monitor_identity") != new_identity:
+            config["capture_monitor_identity"] = new_identity
+            identity_changed = True
+        if identity_changed:
+            config_mod.save_config(config)
         self.ocr_manager = ocr_mod.OCRManager(config)
         self.translator = translate_mod.TranslationManager(config)
         self.overlay = overlay_mod.OverlayController(app, config)
@@ -703,6 +719,7 @@ class Orchestrator:
             pass
 
         self.config["capture_monitor_index"] = index
+        self.config["capture_monitor_identity"] = capture_mod.get_monitor_identity(index)
         config_mod.save_config(self.config)
         logger.info("Yakalanacak monitor degistirildi: %s", index)
         return True

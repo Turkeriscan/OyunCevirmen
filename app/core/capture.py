@@ -72,6 +72,116 @@ def _lookup_mss_origin(monitor_index):
         return (0, 0)
 
 
+def get_monitor_identity(monitor_index):
+    """Secili (mss numaralandirmali) monitorun "kimligini" (konum +
+    cozunurluk) dondurur. Bu, salt bir SIRA NUMARASINDAN farkli olarak
+    ekranlar yeniden duzenlendiginde (kablo degisikligi, yeni monitor
+    eklenmesi vb.) bile AYNI fiziksel ekrani tekrar bulmaya yarar."""
+    try:
+        with mss.mss() as sct:
+            physical = sct.monitors[1:]
+            if monitor_index >= len(physical):
+                return None
+            mon = physical[monitor_index]
+            return {
+                "left": int(mon.get("left", 0)), "top": int(mon.get("top", 0)),
+                "width": int(mon.get("width", 0)), "height": int(mon.get("height", 0)),
+            }
+    except Exception as exc:
+        logger.warning("Monitor kimligi okunamadi: %s", exc)
+        return None
+
+
+def _identity_matches(identity, mon):
+    if not identity or not isinstance(identity, dict):
+        return False
+    return (
+        identity.get("left") == int(mon.get("left", 0))
+        and identity.get("top") == int(mon.get("top", 0))
+        and identity.get("width") == int(mon.get("width", 0))
+        and identity.get("height") == int(mon.get("height", 0))
+    )
+
+
+def resolve_monitor_index(config):
+    """config'teki capture_monitor_identity, su anki ekran dizilimindeki
+    bir monitorle eslesiyorsa O MONITORUN GUNCEL index'ini dondurur (ekran
+    dizilimi degismisse dogru ekranda kalinsin diye); eslesme yoksa
+    (ilk kurulum, kimlik hic kaydedilmemis, veya o monitor artik yok)
+    config'teki ham capture_monitor_index'e sessizce doner."""
+    stored_index = int(config.get("capture_monitor_index", 0) or 0)
+    identity = config.get("capture_monitor_identity")
+    if not identity:
+        return stored_index
+    try:
+        with mss.mss() as sct:
+            physical = sct.monitors[1:]
+            for i, mon in enumerate(physical):
+                if _identity_matches(identity, mon):
+                    return i
+    except Exception as exc:
+        logger.warning("Monitor kimligi eslestirilemedi: %s", exc)
+    return stored_index
+
+
+def _enum_dxcam_outputs(max_devices=4, max_outputs=8):
+    """Butun dxcam (cihaz, cikis) ciftlerini DENEYEREK bulur. Sadece
+    PUBLIC dxcam.create()/release() API'si kullanilir (ic DXFactory'ye
+    dogrudan erisilmez) ki dxcam surumleri arasinda daha dayanikli olsun.
+    Her bulunan cikis icin (device_idx, output_idx, origin, resolution)
+    dondurur; origin/resolution okunamayan bir cikis da (None, None)
+    degerleriyle listeye eklenir (en azindan deneme sayisi bilinsin)."""
+    found = []
+    for device_idx in range(max_devices):
+        any_output_this_device = False
+        for output_idx in range(max_outputs):
+            cam = None
+            try:
+                cam = dxcam.create(device_idx=device_idx, output_idx=output_idx, output_color="BGR")
+            except Exception:
+                break  # bu cihazda bu ciktidan sonrasi yok
+            if cam is None:
+                break
+            any_output_this_device = True
+            origin = _dxcam_output_origin(cam)
+            resolution = None
+            try:
+                resolution = tuple(int(v) for v in cam._output.resolution)
+            except Exception:
+                pass
+            found.append((device_idx, output_idx, origin, resolution))
+            try:
+                cam.release()
+            except Exception:
+                pass
+        if not any_output_this_device and device_idx > 0:
+            break
+    return found
+
+
+def _find_matching_dxcam_output(target, outputs):
+    """target: {"left","top","width","height"} (mss'ten, eslestirilmek
+    istenen fiziksel monitor). outputs: _enum_dxcam_outputs() ciktisi.
+    Konumu (ve biliniyorsa cozunurlugu) eslesen (device_idx, output_idx)
+    ciftini dondurur; hicbiri eslesmezse None.
+
+    Saf bir fonksiyondur (dxcam'e hic dokunmaz) ki gercek ekran karti
+    olmadan da test edilebilsin."""
+    if target is None:
+        return None
+    tl, tt = target.get("left"), target.get("top")
+    tw, th = target.get("width"), target.get("height")
+    for device_idx, output_idx, origin, resolution in outputs:
+        if origin is None:
+            continue
+        if origin[0] != tl or origin[1] != tt:
+            continue
+        if resolution is not None and tw and th and resolution != (tw, th):
+            continue  # ayni konum ama cozunurluk uyusmuyor - suphelidir, atla
+        return (device_idx, output_idx)
+    return None
+
+
 def list_monitors():
     """Fiziksel monitorlerin kullanici dostu listesini dondurur.
 
@@ -127,26 +237,51 @@ class ScreenCapturer:
 
     def _init_backend(self):
         if _DXCAM_AVAILABLE:
-            try:
-                self._dxcam_cam = dxcam.create(
-                    output_idx=self.monitor_index, output_color="BGR"
+            # ONEMLI: mss'in monitor sira numarasi ile dxcam'in kendi
+            # (device_idx, output_idx) numaralandirmasi AYNI SIRADA OLMAK
+            # ZORUNDA DEGIL - ozellikle birden fazla ekran karti (dahili +
+            # harici GPU) oldugunda tamamen farkli olabilir. "monitor_index"i
+            # dogrudan dxcam output_idx olarak kullanmak YANLIS EKRANIN
+            # yakalanmasina yol acabilirdi. Bunun yerine, kullanicinin
+            # sectigi mss monitorunun KONUMUNU (ve cozunurlugunu) dxcam'in
+            # ciktilari arasinda ARAYIP eslesen ciktiyi kullaniyoruz.
+            target = get_monitor_identity(self.monitor_index)
+            match = None
+            if target is not None:
+                try:
+                    match = _find_matching_dxcam_output(target, _enum_dxcam_outputs())
+                except Exception as exc:
+                    logger.warning("dxcam ciktilari taranamadi: %s", exc)
+            if match is None:
+                logger.warning(
+                    "Monitor %s icin eslesen bir dxcam ciktisi bulunamadi (hedef=%s); "
+                    "mss'e dusuluyor.", self.monitor_index, target,
                 )
-                if self._dxcam_cam is not None:
-                    # Tek seferlik test yakalama (bazi GPU/surucu kombinasyonlarinda
-                    # create() basarili olsa da grab() patlar; burada yakalanir)
-                    self._dxcam_cam.grab()
-                    self.backend = "dxcam"
-                    origin = _dxcam_output_origin(self._dxcam_cam)
-                    if origin is None:
-                        origin = _lookup_mss_origin(self.monitor_index)
-                    self.left, self.top = origin
-                    logger.info(
-                        "Yakalama motoru: dxcam (monitor %s, konum=%s)",
-                        self.monitor_index, origin,
+            else:
+                device_idx, output_idx = match
+                try:
+                    self._dxcam_cam = dxcam.create(
+                        device_idx=device_idx, output_idx=output_idx, output_color="BGR"
                     )
-                    return
-            except Exception as exc:
-                logger.warning("dxcam baslatilamadi (%s), mss'e dusuluyor", exc)
+                    if self._dxcam_cam is not None:
+                        # Tek seferlik test yakalama (bazi GPU/surucu kombinasyonlarinda
+                        # create() basarili olsa da grab() patlar; burada yakalanir)
+                        self._dxcam_cam.grab()
+                        self.backend = "dxcam"
+                        origin = _dxcam_output_origin(self._dxcam_cam)
+                        if origin is None:
+                            origin = (target["left"], target["top"])
+                        self.left, self.top = origin
+                        logger.info(
+                            "Yakalama motoru: dxcam (monitor %s -> device=%s output=%s, konum=%s)",
+                            self.monitor_index, device_idx, output_idx, origin,
+                        )
+                        return
+                except Exception as exc:
+                    logger.warning(
+                        "Eslesen dxcam ciktisi baslatilamadi (device=%s output=%s): %s, "
+                        "mss'e dusuluyor", device_idx, output_idx, exc,
+                    )
 
         self._mss_inst = mss.mss()
         # mss monitors[0] = tum monitorler birlesik; 1,2,... tekil monitorler

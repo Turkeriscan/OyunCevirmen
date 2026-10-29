@@ -66,6 +66,12 @@ DEFAULT_CONFIG = {
     # Performans
     "max_cache_memory_items": 5000,
     "capture_monitor_index": 0,
+    # Secili monitorun "kimligi" (konum+cozunurluk): ekran dizilimi
+    # degisirse (yeni monitor eklenir/cikarilirsa) bile DOGRU fiziksel
+    # ekranin bulunabilmesi icin salt sira numarasindan daha guvenilir bir
+    # referans (bkz. app/core/capture.py resolve_monitor_index). Henuz
+    # kaydedilmemisse None.
+    "capture_monitor_identity": None,
     # Ceviri kutularinin stili: "box" (kutu) | "subtitle" (altyazi) | "band" (serit)
     "overlay_style": "box",
     # Ceviri yazi tipi: "plex" (programla gelir) | "segoe" (Windows) | "serif" (Newsreader)
@@ -81,7 +87,10 @@ DEFAULT_CONFIG = {
 
 # Degeri None/esnek kalabilen anahtarlar: turu zorlanmaz, kullanildiklari
 # yerlerde zaten savunmaci kontrol var (orn. _restore_geometry, MiniPanel.place).
-_NULLABLE_KEYS = {"allow_google_fallback", "mini_panel_pos", "window_geometry"}
+_NULLABLE_KEYS = {
+    "allow_google_fallback", "mini_panel_pos", "window_geometry", "capture_monitor_identity",
+}
+_MONITOR_IDENTITY_KEYS = ("left", "top", "width", "height")
 
 _lock = threading.RLock()  # load_config() ilk calistirmada save_config()'u kilit tutarken cagirabilir
 _cached = None
@@ -102,6 +111,16 @@ def _validate_config(data):
             if key == "allow_google_fallback" and value not in (None, True, False):
                 logger.warning("config.json: '%s' gecersiz (%r), sifirlaniyor.", key, value)
                 cleaned[key] = None
+            elif key == "capture_monitor_identity" and value is not None:
+                valid = (
+                    isinstance(value, dict)
+                    and all(k in value for k in _MONITOR_IDENTITY_KEYS)
+                    and all(isinstance(value[k], int) and not isinstance(value[k], bool)
+                            for k in _MONITOR_IDENTITY_KEYS)
+                )
+                if not valid:
+                    logger.warning("config.json: '%s' gecersiz (%r), sifirlaniyor.", key, value)
+                    cleaned[key] = None
             continue
         if isinstance(default, bool):
             if not isinstance(value, bool):

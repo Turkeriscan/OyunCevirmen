@@ -80,6 +80,93 @@ def test_mss_monitor_origin_missing_keys_defaults_zero():
     assert capture._mss_monitor_origin({}) == (0, 0)
 
 
+# ------------------------------------- dxcam<->mss monitor eslestirme (1.6)
+def test_find_matching_dxcam_output_matches_by_position():
+    target = {"left": 1920, "top": 0, "width": 1920, "height": 1080}
+    outputs = [
+        (0, 0, (0, 0), (1920, 1080)),
+        (0, 1, (1920, 0), (1920, 1080)),
+    ]
+    assert capture._find_matching_dxcam_output(target, outputs) == (0, 1)
+
+
+def test_find_matching_dxcam_output_rejects_resolution_mismatch():
+    """Ayni konumda ama FARKLI cozunurlukte bir cikis (suphelidir,
+    muhtemelen farkli bir ekran) eslesme SAYILMAMALI."""
+    target = {"left": 0, "top": 0, "width": 1920, "height": 1080}
+    outputs = [(0, 0, (0, 0), (2560, 1440))]
+    assert capture._find_matching_dxcam_output(target, outputs) is None
+
+
+def test_find_matching_dxcam_output_none_when_no_outputs():
+    target = {"left": 0, "top": 0, "width": 1920, "height": 1080}
+    assert capture._find_matching_dxcam_output(target, []) is None
+
+
+def test_find_matching_dxcam_output_none_for_none_target():
+    assert capture._find_matching_dxcam_output(None, [(0, 0, (0, 0), (1920, 1080))]) is None
+
+
+def test_find_matching_dxcam_output_skips_unreadable_origin():
+    target = {"left": 0, "top": 0, "width": 1920, "height": 1080}
+    outputs = [(0, 0, None, None), (0, 1, (0, 0), (1920, 1080))]
+    assert capture._find_matching_dxcam_output(target, outputs) == (0, 1)
+
+
+def test_get_monitor_identity_returns_position_and_resolution():
+    monitors = [
+        {"left": 0, "top": 0, "width": 3840, "height": 1080},
+        {"left": 0, "top": 0, "width": 1920, "height": 1080},
+        {"left": 1920, "top": 0, "width": 1920, "height": 1080},
+    ]
+    fake_mss_instance = _make_fake_mss(monitors)
+    with patch.object(capture.mss, "mss", return_value=fake_mss_instance):
+        identity = capture.get_monitor_identity(1)
+    assert identity == {"left": 1920, "top": 0, "width": 1920, "height": 1080}
+
+
+def test_get_monitor_identity_out_of_range_returns_none():
+    monitors = [{"left": 0, "top": 0, "width": 3840, "height": 1080},
+                {"left": 0, "top": 0, "width": 1920, "height": 1080}]
+    fake_mss_instance = _make_fake_mss(monitors)
+    with patch.object(capture.mss, "mss", return_value=fake_mss_instance):
+        assert capture.get_monitor_identity(5) is None
+
+
+def test_resolve_monitor_index_prefers_matching_identity_over_stale_index():
+    """Ekran dizilimi degisip monitorler yeniden numaralansa bile, kayitli
+    KIMLIK (konum+cozunurluk) eslesen monitorun GUNCEL index'ini dondurmeli -
+    salt eski (artik yanlis ekrani isaret eden) sira numarasini degil."""
+    monitors = [
+        {"left": 0, "top": 0, "width": 3840, "height": 1080},
+        {"left": 1920, "top": 0, "width": 1920, "height": 1080},  # simdi index 0
+        {"left": 0, "top": 0, "width": 1920, "height": 1080},     # simdi index 1
+    ]
+    fake_mss_instance = _make_fake_mss(monitors)
+    config = {
+        "capture_monitor_index": 0,  # ESKI (artik gecersiz) sira numarasi
+        "capture_monitor_identity": {"left": 0, "top": 0, "width": 1920, "height": 1080},
+    }
+    with patch.object(capture.mss, "mss", return_value=fake_mss_instance):
+        assert capture.resolve_monitor_index(config) == 1
+
+
+def test_resolve_monitor_index_falls_back_to_stored_index_when_no_identity():
+    config = {"capture_monitor_index": 2}
+    assert capture.resolve_monitor_index(config) == 2
+
+
+def test_resolve_monitor_index_falls_back_when_identity_matches_nothing():
+    monitors = [{"left": 0, "top": 0, "width": 1920, "height": 1080}]
+    fake_mss_instance = _make_fake_mss(monitors)
+    config = {
+        "capture_monitor_index": 3,
+        "capture_monitor_identity": {"left": 9999, "top": 9999, "width": 100, "height": 100},
+    }
+    with patch.object(capture.mss, "mss", return_value=fake_mss_instance):
+        assert capture.resolve_monitor_index(config) == 3
+
+
 # -------------------------------------------------- ScreenCapturer entegrasyonu
 class _FakeMssMonitor(dict):
     pass
@@ -129,47 +216,82 @@ def test_screen_capturer_mss_backend_negative_origin():
     assert cap.get_origin() == (-1920, 0)
 
 
+def _dxcam_factory(specs):
+    """specs: {(device_idx, output_idx): (left, top, right, bottom, resolution)}.
+    Her cagrida YENI bir sahte kamera dondurur - boylece "tarama" (probe)
+    asamasindaki kameralar ile gercekte KULLANILAN (son) kamera birbirinden
+    ayirt edilebilir (orn. close() testlerinde release() sayisini dogru
+    saymak icin). Eslesmeyen bir (device_idx, output_idx) icin IndexError
+    firlatir - _enum_dxcam_outputs'un tarama dongusunun dogru yerde
+    durmasini saglar."""
+    created = []
+
+    def factory(device_idx=0, output_idx=None, output_color="RGB", **kw):
+        key = (device_idx, output_idx)
+        if key not in specs:
+            raise IndexError("yok")
+        l, t, r, b, resolution = specs[key]
+        cam = _fake_dxcam_camera(l, t, r, b)
+        cam.grab.return_value = object()
+        cam._output.resolution = resolution
+        cam.is_released = False
+        created.append(cam)
+        return cam
+
+    factory.created = created
+    return factory
+
+
+def _make_fake_dxcam_module(specs):
+    factory = _dxcam_factory(specs)
+    module = MagicMock()
+    module.create = MagicMock(side_effect=factory)
+    module.created = factory.created
+    return module
+
+
+_THREE_MONITOR_LAYOUT = [
+    {"left": 0, "top": 0, "width": 3840, "height": 1080},
+    {"left": 0, "top": 0, "width": 1920, "height": 1080},
+    {"left": 1920, "top": 0, "width": 1920, "height": 1080},
+]
+
+
 def test_screen_capturer_dxcam_backend_uses_dxgi_origin():
-    """dxcam kullanilabiliyorsa, konum DXGI DesktopCoordinates'ten gelmeli
-    (mss'e hic danisilmamali)."""
-    fake_cam = _fake_dxcam_camera(1920, 0, 3840, 1080)
-    fake_cam.grab.return_value = object()  # test yakalamasi None donmesin
-
-    fake_dxcam_module = MagicMock()
-    fake_dxcam_module.create.return_value = fake_cam
-
-    with patch.object(capture, "_DXCAM_AVAILABLE", True), \
-         patch.object(capture, "dxcam", fake_dxcam_module, create=True):
-        cap = capture.ScreenCapturer(monitor_index=1)
-
-    assert cap.backend == "dxcam"
-    assert cap.get_origin() == (1920, 0)
-    fake_dxcam_module.create.assert_called_once()
-
-
-def test_screen_capturer_dxcam_falls_back_to_mss_origin_when_dxgi_unavailable():
-    """dxcam'in ic API'si degisip origin okunamasa bile (None donerse),
-    program cokmeden mss uzerinden konumu bulabilmeli."""
-    fake_cam = MagicMock()
-    fake_cam.grab.return_value = object()
-    del fake_cam._output  # DesktopCoordinates okumasi basarisiz olsun
-
-    fake_dxcam_module = MagicMock()
-    fake_dxcam_module.create.return_value = fake_cam
-
-    monitors = [
-        {"left": 0, "top": 0, "width": 3840, "height": 1080},
-        {"left": 0, "top": 0, "width": 1920, "height": 1080},
-        {"left": 1920, "top": 0, "width": 1920, "height": 1080},
-    ]
-    fake_mss_instance = _make_fake_mss(monitors)
+    """dxcam kullanilabiliyorsa VE secilen mss monitorune konumca eslesen
+    bir dxcam ciktisi bulunursa, konum DXGI DesktopCoordinates'ten
+    gelmeli."""
+    fake_dxcam_module = _make_fake_dxcam_module({
+        (0, 0): (0, 0, 1920, 1080, (1920, 1080)),
+        (0, 1): (1920, 0, 3840, 1080, (1920, 1080)),
+    })
+    fake_mss_instance = _make_fake_mss(_THREE_MONITOR_LAYOUT)
 
     with patch.object(capture, "_DXCAM_AVAILABLE", True), \
          patch.object(capture, "dxcam", fake_dxcam_module, create=True), \
          patch.object(capture.mss, "mss", return_value=fake_mss_instance):
-        cap = capture.ScreenCapturer(monitor_index=1)
+        cap = capture.ScreenCapturer(monitor_index=1)  # mss fiziksel 1 -> (1920,0)
 
     assert cap.backend == "dxcam"
+    assert cap.get_origin() == (1920, 0)
+
+
+def test_screen_capturer_dxcam_falls_back_to_mss_when_no_matching_output():
+    """dxcam ciktilarindan HICBIRI secilen monitorun konumuyla eslesmezse
+    (orn. dxcam'in numaralandirmasi mss'inkiyle farkli), program cokmeden
+    mss'e dusmeli - YANLIS ekrani sessizce yakalamamali."""
+    fake_dxcam_module = _make_fake_dxcam_module({
+        (0, 0): (0, 0, 1920, 1080, (1920, 1080)),
+        # (1920, 0) konumunda bir cikis YOK - kasitli eksik
+    })
+    fake_mss_instance = _make_fake_mss(_THREE_MONITOR_LAYOUT)
+
+    with patch.object(capture, "_DXCAM_AVAILABLE", True), \
+         patch.object(capture, "dxcam", fake_dxcam_module, create=True), \
+         patch.object(capture.mss, "mss", return_value=fake_mss_instance):
+        cap = capture.ScreenCapturer(monitor_index=1)  # mss fiziksel 1 -> (1920,0)
+
+    assert cap.backend == "mss"
     assert cap.get_origin() == (1920, 0)
 
 
@@ -177,53 +299,46 @@ def test_screen_capturer_dxcam_falls_back_to_mss_origin_when_dxgi_unavailable():
 def test_close_releases_dxcam_camera():
     """close() dxcam kamerasinda acikca release() cagirmali (GC'ye birakmak
     yerine - monitor sik degistiginde kaynagin hemen serbest kalmasi icin)."""
-    fake_cam = _fake_dxcam_camera(1920, 0, 3840, 1080)
-    fake_cam.grab.return_value = object()
-    fake_cam.is_released = False
-
-    fake_dxcam_module = MagicMock()
-    fake_dxcam_module.create.return_value = fake_cam
+    fake_dxcam_module = _make_fake_dxcam_module({(0, 0): (1920, 0, 3840, 1080, (1920, 1080))})
+    fake_mss_instance = _make_fake_mss(_THREE_MONITOR_LAYOUT)
 
     with patch.object(capture, "_DXCAM_AVAILABLE", True), \
-         patch.object(capture, "dxcam", fake_dxcam_module, create=True):
+         patch.object(capture, "dxcam", fake_dxcam_module, create=True), \
+         patch.object(capture.mss, "mss", return_value=fake_mss_instance):
         cap = capture.ScreenCapturer(monitor_index=1)
         cap.close()
 
-    fake_cam.release.assert_called_once()
+    real_cam = fake_dxcam_module.created[-1]  # probe degil, GERCEKTEN kullanilan kamera
+    real_cam.release.assert_called_once()
     assert cap._dxcam_cam is None
 
 
 def test_close_skips_release_if_already_released():
     """Kamera zaten release edilmisse tekrar cagirmamali (dxcam bunu hata
     sayabilir)."""
-    fake_cam = _fake_dxcam_camera(1920, 0, 3840, 1080)
-    fake_cam.grab.return_value = object()
-    fake_cam.is_released = True
-
-    fake_dxcam_module = MagicMock()
-    fake_dxcam_module.create.return_value = fake_cam
+    fake_dxcam_module = _make_fake_dxcam_module({(0, 0): (1920, 0, 3840, 1080, (1920, 1080))})
+    fake_mss_instance = _make_fake_mss(_THREE_MONITOR_LAYOUT)
 
     with patch.object(capture, "_DXCAM_AVAILABLE", True), \
-         patch.object(capture, "dxcam", fake_dxcam_module, create=True):
+         patch.object(capture, "dxcam", fake_dxcam_module, create=True), \
+         patch.object(capture.mss, "mss", return_value=fake_mss_instance):
         cap = capture.ScreenCapturer(monitor_index=1)
+        fake_dxcam_module.created[-1].is_released = True
         cap.close()
 
-    fake_cam.release.assert_not_called()
+    fake_dxcam_module.created[-1].release.assert_not_called()
 
 
 def test_close_handles_release_exception_gracefully():
     """release() patlarsa bile close() disariya istisna sizdirmamali."""
-    fake_cam = _fake_dxcam_camera(1920, 0, 3840, 1080)
-    fake_cam.grab.return_value = object()
-    fake_cam.is_released = False
-    fake_cam.release.side_effect = RuntimeError("patlat")
-
-    fake_dxcam_module = MagicMock()
-    fake_dxcam_module.create.return_value = fake_cam
+    fake_dxcam_module = _make_fake_dxcam_module({(0, 0): (1920, 0, 3840, 1080, (1920, 1080))})
+    fake_mss_instance = _make_fake_mss(_THREE_MONITOR_LAYOUT)
 
     with patch.object(capture, "_DXCAM_AVAILABLE", True), \
-         patch.object(capture, "dxcam", fake_dxcam_module, create=True):
+         patch.object(capture, "dxcam", fake_dxcam_module, create=True), \
+         patch.object(capture.mss, "mss", return_value=fake_mss_instance):
         cap = capture.ScreenCapturer(monitor_index=1)
+        fake_dxcam_module.created[-1].release.side_effect = RuntimeError("patlat")
         cap.close()  # istisna firlatmamali
 
 
@@ -242,3 +357,45 @@ def test_close_closes_mss_instance():
 
     fake_mss_instance.close.assert_called_once()
     assert cap._mss_inst is None
+
+
+# --------------------------------------------------------- dxcam cikis tarama
+def test_enum_dxcam_outputs_finds_all_outputs_on_one_device():
+    fake_dxcam_module = _make_fake_dxcam_module({
+        (0, 0): (0, 0, 1920, 1080, (1920, 1080)),
+        (0, 1): (1920, 0, 3840, 1080, (1920, 1080)),
+    })
+    with patch.object(capture, "dxcam", fake_dxcam_module, create=True):
+        outputs = capture._enum_dxcam_outputs()
+    assert (0, 0, (0, 0), (1920, 1080)) in outputs
+    assert (0, 1, (1920, 0), (1920, 1080)) in outputs
+    assert len(outputs) == 2
+
+
+def test_enum_dxcam_outputs_scans_multiple_devices():
+    """Birden fazla ekran karti (orn. dahili + harici GPU) oldugunda,
+    her ikisinin de ciktilari taranmali."""
+    fake_dxcam_module = _make_fake_dxcam_module({
+        (0, 0): (0, 0, 1920, 1080, (1920, 1080)),
+        (1, 0): (1920, 0, 3840, 1080, (2560, 1440)),
+    })
+    with patch.object(capture, "dxcam", fake_dxcam_module, create=True):
+        outputs = capture._enum_dxcam_outputs()
+    device_indices = {o[0] for o in outputs}
+    assert device_indices == {0, 1}
+
+
+def test_enum_dxcam_outputs_releases_each_probed_camera():
+    fake_dxcam_module = _make_fake_dxcam_module({
+        (0, 0): (0, 0, 1920, 1080, (1920, 1080)),
+    })
+    with patch.object(capture, "dxcam", fake_dxcam_module, create=True):
+        capture._enum_dxcam_outputs()
+    fake_dxcam_module.created[0].release.assert_called_once()
+
+
+def test_enum_dxcam_outputs_empty_when_nothing_available():
+    fake_dxcam_module = _make_fake_dxcam_module({})
+    with patch.object(capture, "dxcam", fake_dxcam_module, create=True):
+        outputs = capture._enum_dxcam_outputs()
+    assert outputs == []
