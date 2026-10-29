@@ -522,10 +522,9 @@ class Orchestrator:
             engine_pref = self.config.get("translate_engine", "ollama")
 
             for idx, cell, sig in changed_cells:
-                any_change = True
+                # Pixel imzasi HER ZAMAN guncellenir - hucrenin gorsel durumu
+                # buysa, ayni "degisim" bir sonraki turda TEKRAR tetiklenmesin.
                 cell_signatures[idx] = sig
-                generation = cell_generation.get(idx, 0) + 1
-                cell_generation[idx] = generation
                 l, t, r, b = cell
                 pl = max(0, l - padding)
                 pt = max(0, t - padding)
@@ -536,6 +535,19 @@ class Orchestrator:
                 offset = (pl + mon_left, pt + mon_top)
 
                 survivors = self._ocr_and_filter(sub, offset)
+
+                # PIKSEL degisti (orn. hucrenin icinde/yakininda hafif bir
+                # animasyon/isik titremesi) ama OKUNAN METIN GERCEKTE AYNIYSA
+                # (F9 aninda taramadaki gibi "degismediyse dokunma" mantigi):
+                # ceviriye/akisa/kutuya HIC dokunma - bosu bosuna yeniden
+                # cevirme/kutu yanip sondurme olmasin.
+                new_texts = {res.text for res in survivors}
+                if new_texts == cell_last_texts.get(idx):
+                    continue
+
+                any_change = True
+                generation = cell_generation.get(idx, 0) + 1
+                cell_generation[idx] = generation
                 tick_total += len(survivors)
 
                 cached_boxes, cache_hits, pending = self._live_process_cell(
