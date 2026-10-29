@@ -110,6 +110,24 @@ UPSCALE_FACTOR = 2.0
 UPSCALE_MAX_PIXELS = 1_000_000
 
 
+def enhance_contrast(frame_bgr, enabled):
+    """enabled ise CLAHE (adaptif histogram esitleme) ile kontrasti
+    artirir - acik-uzerine-acik (soluk) yazilarin OCR tarafindan daha
+    kolay secilmesi icin. Griye cevirip esitler, sonra motorlarin
+    bekledigi 3 kanalli BGR'a geri cevirir. Basarisiz olursa orijinal
+    kareyi degistirmeden dondurur."""
+    if not enabled or frame_bgr is None:
+        return frame_bgr
+    try:
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+        return cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+    except Exception as exc:
+        logger.warning("Kontrast iyilestirme basarisiz: %s", exc)
+        return frame_bgr
+
+
 def maybe_upscale(frame_bgr, enabled):
     """enabled ve kare yeterince kucukse goruntuyu UPSCALE_FACTOR kadar
     buyutur (kucuk yazilarin daha net okunmasi icin). (yeni_kare, olcek)
@@ -432,6 +450,8 @@ class OCRManager:
 
     def recognize(self, frame_bgr, offset=(0, 0)):
         engine = self.get_engine()
+        contrast_enabled = self.config.get("ocr_contrast_enhance", False)
+        frame_bgr = enhance_contrast(frame_bgr, contrast_enabled)
         upscale_enabled = self.config.get("ocr_upscale_small_text", True)
         processed, factor = maybe_upscale(frame_bgr, upscale_enabled)
         # Motora offset=(0,0) veririz: once buyutulmus kare uzerindeki
@@ -445,7 +465,9 @@ class OCRManager:
             # toptan buyutulemedi (bkz. UPSCALE_MAX_PIXELS). Onun yerine
             # SADECE ilk gecisin bulduğu kucuk yazili bolgeleri tek tek
             # kirpip buyutup yeniden okuyoruz - boylece kucuk yazi
-            # buyutmesi aninda taramada da ise yarar.
+            # buyutmesi aninda taramada da ise yarar. (frame_bgr burada
+            # ZATEN kontrast-iyilestirilmis kare - crop'lar da onunla
+            # tutarli olsun diye.)
             results = self._refine_small_text_regions(engine, frame_bgr, results)
 
         ox, oy = offset

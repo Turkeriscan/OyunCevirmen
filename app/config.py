@@ -61,6 +61,9 @@ DEFAULT_CONFIG = {
     # Kucuk yazilari OCR'dan once 2 kat buyutup koordinatlari geri olcekler;
     # kucuk fontlu oyun ici yazilarda okuma isabetini artirir.
     "ocr_upscale_small_text": True,
+    # CLAHE ile kontrasti artirir; acik-uzerine-acik (soluk) yazilar icin
+    # OCR isabetini artirabilir ama her oyunda gerekli degildir, varsayilan kapali.
+    "ocr_contrast_enhance": False,
     # Canli modda onbellekte olmayan satirlar en fazla bu kadar is parcaciginda
     # AYNI ANDA cevrilir (Ollama'ya asiri paralel yuk binmesin diye sinirli).
     "translate_parallel_workers": 3,

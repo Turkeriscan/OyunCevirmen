@@ -70,6 +70,22 @@ def test_wrong_type_bool_field_resets_to_default(isolated_config):
     assert cfg["ocr_upscale_small_text"] == config_mod.DEFAULT_CONFIG["ocr_upscale_small_text"]
 
 
+def test_ocr_contrast_enhance_default_is_false():
+    assert config_mod.DEFAULT_CONFIG["ocr_contrast_enhance"] is False
+
+
+def test_ocr_contrast_enhance_accepts_bool(isolated_config):
+    isolated_config.write_text(json.dumps({"ocr_contrast_enhance": True}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["ocr_contrast_enhance"] is True
+
+
+def test_ocr_contrast_enhance_wrong_type_resets_to_default(isolated_config):
+    isolated_config.write_text(json.dumps({"ocr_contrast_enhance": "evet"}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["ocr_contrast_enhance"] is False
+
+
 def test_wrong_type_string_field_resets_to_default(isolated_config):
     isolated_config.write_text(json.dumps({"ocr_engine": 42}), encoding="utf-8")
     cfg = config_mod.load_config()

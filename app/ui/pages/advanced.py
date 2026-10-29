@@ -51,6 +51,12 @@ class AdvancedPage(Page):
         g2.row("Küçük yazıları büyüterek oku", "Okumadan önce görüntüyü 2 kat büyütür; "
                "küçük fontlu yazılarda isabeti artırır, çok büyük taramaları yavaşlatmaz.",
                self.combo_upscale)
+        self.combo_contrast = Combo()
+        self.combo_contrast.addItem("Açık", True)
+        self.combo_contrast.addItem("Kapalı", False)
+        g2.row("Kontrastı güçlendir", "Açık renk üzerine açık renk (soluk) yazılarda okumayı "
+               "kolaylaştırabilir; her oyunda gerekli değildir, varsayılan kapalıdır.",
+               self.combo_contrast)
         self.body.addWidget(g2)
 
         self.body.addSpacing(px(10))
@@ -96,6 +102,7 @@ class AdvancedPage(Page):
                   self.st_typewriter):
             s.valueChanged.connect(ctx.schedule_save)
         self.combo_upscale.currentIndexChanged.connect(ctx.schedule_save)
+        self.combo_contrast.currentIndexChanged.connect(ctx.schedule_save)
         self.combo_monitor.currentIndexChanged.connect(self._monitor_changed)
 
     # --------------------------------------------------------- ekranlar
@@ -136,6 +143,8 @@ class AdvancedPage(Page):
         self.st_cache.setValue(cfg.get("max_cache_memory_items", 5000), emit=False)
         i = self.combo_upscale.findData(bool(cfg.get("ocr_upscale_small_text", True)))
         self.combo_upscale.setCurrentIndex(i if i >= 0 else 0)
+        i = self.combo_contrast.findData(bool(cfg.get("ocr_contrast_enhance", False)))
+        self.combo_contrast.setCurrentIndex(i if i >= 0 else 1)
         self.refresh_monitors(select_index=cfg.get("capture_monitor_index", 0))
 
     def save(self, cfg):
@@ -148,4 +157,5 @@ class AdvancedPage(Page):
         cfg["min_ocr_confidence"] = round(self.sl_conf.value(), 2)
         cfg["max_cache_memory_items"] = self.st_cache.value()
         cfg["ocr_upscale_small_text"] = bool(self.combo_upscale.currentData())
+        cfg["ocr_contrast_enhance"] = bool(self.combo_contrast.currentData())
         # capture_monitor_index: _monitor_changed -> orchestrator.change_monitor yonetir

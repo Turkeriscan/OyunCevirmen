@@ -453,3 +453,79 @@ def test_refine_small_text_regions_applies_offset_correctly():
     assert len(refined) == 1
     # Kirpma orijini (50-12, 50-12) = (38, 38); sonuc buna gore kaydirilmali
     assert refined[0].bbox[0] >= 38
+
+
+# -------------------------------------------------- 3.3: kontrast iyilestirme (CLAHE)
+def test_enhance_contrast_disabled_returns_same_frame():
+    frame = np.zeros((50, 50, 3), dtype=np.uint8)
+    out = ocr.enhance_contrast(frame, enabled=False)
+    assert out is frame
+
+
+def test_enhance_contrast_enabled_changes_flat_gray_frame():
+    """Duz (sabit) griden olusan bir karede CLAHE bile fark yaratmayabilir,
+    bu yuzden bariz bir kontrast farki olan bir kare kullanilir: yarisi
+    koyu yarisi acik gri (hafif farkli) - CLAHE esitlemesi sonucu
+    degismelidir ve sekil/kanal sayisi (3 BGR) korunmalidir."""
+    frame = np.zeros((40, 40, 3), dtype=np.uint8)
+    frame[:, :20] = 80
+    frame[:, 20:] = 90
+    out = ocr.enhance_contrast(frame, enabled=True)
+    assert out.shape == frame.shape
+    assert not np.array_equal(out, frame)
+
+
+def test_enhance_contrast_handles_exception_gracefully():
+    frame = np.zeros((40, 40, 3), dtype=np.uint8)
+    with patch("app.core.ocr.cv2.cvtColor", side_effect=RuntimeError("patlat")):
+        out = ocr.enhance_contrast(frame, enabled=True)
+    assert out is frame
+
+
+def test_enhance_contrast_none_frame_returns_none():
+    assert ocr.enhance_contrast(None, enabled=True) is None
+
+
+def test_ocr_manager_recognize_applies_contrast_enhancement_when_enabled():
+    captured = {}
+
+    class _FakeEngine:
+        def recognize(self, frame_bgr, offset=(0, 0)):
+            captured["frame"] = frame_bgr
+            return []
+
+    cfg = {"ocr_engine": "windows", "ocr_upscale_small_text": False, "ocr_contrast_enhance": True}
+    manager = ocr.OCRManager(cfg)
+    manager._engine = _FakeEngine()
+    manager._engine_name = "windows"
+    manager._engine_lang = "auto"
+
+    frame = np.zeros((40, 40, 3), dtype=np.uint8)
+    frame[:, :20] = 80
+    frame[:, 20:] = 90
+
+    with patch("app.core.ocr.enhance_contrast", wraps=ocr.enhance_contrast) as fake_enhance:
+        manager.recognize(frame)
+
+    fake_enhance.assert_called_once()
+    assert fake_enhance.call_args[0][1] is True
+
+
+def test_ocr_manager_recognize_skips_contrast_enhancement_when_disabled():
+    cfg = {"ocr_engine": "windows", "ocr_upscale_small_text": False, "ocr_contrast_enhance": False}
+    manager = ocr.OCRManager(cfg)
+
+    class _FakeEngine:
+        def recognize(self, frame_bgr, offset=(0, 0)):
+            return []
+
+    manager._engine = _FakeEngine()
+    manager._engine_name = "windows"
+    manager._engine_lang = "auto"
+
+    frame = np.zeros((40, 40, 3), dtype=np.uint8)
+    with patch("app.core.ocr.enhance_contrast", wraps=ocr.enhance_contrast) as fake_enhance:
+        manager.recognize(frame)
+
+    fake_enhance.assert_called_once()
+    assert fake_enhance.call_args[0][1] is False
