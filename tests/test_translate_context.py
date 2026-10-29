@@ -59,6 +59,33 @@ def test_cache_key_independent_of_context(tmp_path):
     assert call_count["n"] == 1
 
 
+# --------------------------------------------- canli onbellek siniri guncelleme
+def test_translate_applies_live_cache_size_from_config(tmp_path):
+    """Kullanici "Bellekte tutulacak çeviri" ayarini calisirken degistirirse,
+    onbellek YENIDEN OLUSTURULMADAN (TranslationManager oturum boyunca tek
+    bir kere kurulur) hemen uygulanmali - aksi halde ayar sessizce yeniden
+    baslatana kadar etkisiz kalirdi."""
+    from app.core import cache as cache_mod
+
+    config = {
+        "translate_engine": "ollama", "ollama_host": "http://127.0.0.1:11434",
+        "ollama_model": "test-model", "source_lang": "auto", "target_lang": "tr",
+        "max_cache_memory_items": 5000,
+    }
+    manager = translate.TranslationManager(config)
+    manager.cache = cache_mod.TranslationCache(
+        max_memory_items=5000, db_path=str(tmp_path / "test_cache2.sqlite3")
+    )
+
+    with patch.object(translate.OllamaTranslator, "translate", lambda *a, **k: "ok"):
+        manager.translate("Hello")
+        assert manager.cache.max_memory_items == 5000
+
+        config["max_cache_memory_items"] = 7
+        manager.translate("World")
+        assert manager.cache.max_memory_items == 7
+
+
 # ------------------------------------------------------------ ollama entegrasyonu
 def test_ollama_translator_includes_context_in_system_message():
     translator = translate.OllamaTranslator(host="http://127.0.0.1:11434", model="m")

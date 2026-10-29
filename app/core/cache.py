@@ -80,6 +80,16 @@ class TranslationCache:
         while len(self._mem) > self.max_memory_items:
             self._mem.popitem(last=False)
 
+    def set_max_memory_items(self, n):
+        """Kullanici Gelismis sayfasindaki "Bellekte tutulacak çeviri"
+        ayarini calisirken degistirebilir; TranslationCache bir kere
+        kurulup oturum boyunca tekrar olusturulmadigi icin bu deger
+        config'ten canli olarak bu metotla yeniden uygulanmalidir (bkz.
+        TranslationManager.translate)."""
+        with self._lock:
+            self.max_memory_items = max(1, int(n))
+            self._trim_memory()
+
     def count(self):
         """Diskte kayitli toplam ceviri sayisi."""
         try:

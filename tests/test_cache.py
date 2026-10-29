@@ -66,3 +66,26 @@ def test_count_reflects_disk_entries(cache):
     assert cache.count() == 0
     cache.set("Hi", "en", "tr", "ollama", "Selam")
     assert cache.count() == 1
+
+
+# ---------------------------------------------- canli siniri degistirme
+def test_set_max_memory_items_updates_limit(cache):
+    cache.set_max_memory_items(3)
+    assert cache.max_memory_items == 3
+
+
+def test_set_max_memory_items_trims_existing_entries_immediately(cache):
+    for i in range(10):
+        cache.set(f"text{i}", "en", "tr", "ollama", f"ceviri{i}")
+    assert len(cache._mem) == 10
+    cache.set_max_memory_items(3)
+    assert len(cache._mem) == 3
+
+
+def test_set_max_memory_items_rejects_non_positive(cache):
+    """Kullanici 0 veya negatif bir deger gonderse bile (beklenmeyen
+    girdi) en az 1 olarak kabul edilmeli, sonsuz dongu/cokme olmamali."""
+    cache.set_max_memory_items(0)
+    assert cache.max_memory_items == 1
+    cache.set_max_memory_items(-5)
+    assert cache.max_memory_items == 1

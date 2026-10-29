@@ -194,6 +194,10 @@ class TranslationManager:
         target_lang = target_lang or self.config.get("target_lang", "tr")
         source_lang = source_lang or self.config.get("source_lang", "auto")
         engine_pref = self.config.get("translate_engine", "ollama")
+        # Ollama host/model gibi: kullanici "Bellekte tutulacak çeviri"
+        # ayarini calisirken degistirirse, zaten kurulu olan onbellege de
+        # hemen yansisin (bkz. TranslationCache.set_max_memory_items).
+        self.cache.set_max_memory_items(self.config.get("max_cache_memory_items", 5000))
 
         # Onbellek anahtari baglamdan BAGIMSIZ kalir: ayni metin, baglam
         # degisse de ayni anahtarla aranir/kaydedilir (aksi halde ayni
