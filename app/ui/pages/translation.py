@@ -94,7 +94,7 @@ class TranslationPage(Page):
         self.lang_row = g.row("Oyunun dili", "", self.combo_lang)
 
         self.combo_google_perm = Combo()
-        self.combo_google_perm.addItem("Sorulmadı (ilk ihtiyaçta sorar)", None)
+        self.combo_google_perm.addItem("Sorulmadı", None)
         self.combo_google_perm.addItem("Açık", True)
         self.combo_google_perm.addItem("Kapalı", False)
         self.google_perm_row = g.row(

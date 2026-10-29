@@ -279,6 +279,7 @@ QPushButton#Quiet {{ background: transparent; border: 1px solid transparent; col
 QPushButton#Quiet:hover {{ background: {RAISED}; color: {PAPER}; }}
 QPushButton#Danger {{ background: transparent; color: #F08A78; border: 1px solid #5A2E26; }}
 QPushButton#Danger:hover {{ background: {REC_WASH}; }}
+QPushButton#Danger:disabled {{ color: {FAINT}; border-color: {LINE_SOFT}; background: transparent; }}
 QPushButton#IconButton {{
     background: transparent; border: 1px solid transparent; border-radius: {r(6)}px; padding: {r(5)}px;
 }}

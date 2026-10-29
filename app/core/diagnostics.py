@@ -28,6 +28,35 @@ REDACTED_CONFIG_KEYS = ("deepl_api_key",)
 MAX_LOG_BYTES = 2_000_000  # log cok buyukse SADECE SON kismi eklenir
 
 
+def _personal_markers():
+    """Pakette gizlenecek kisisel metinler: kullanici klasoru ve kullanici adi."""
+    markers = []
+    try:
+        home = os.path.expanduser("~")
+        if home and home != "~":
+            markers += [home, home.replace("\\", "/")]
+    except Exception:
+        pass
+    for var in ("USERNAME", "USER"):
+        name = os.environ.get(var)
+        if name and len(name) >= 3:
+            markers.append(name)
+    # En uzun once: once tam yol, sonra tek basina kullanici adi degissin
+    return sorted(set(markers), key=len, reverse=True)
+
+
+def redact_text(text, markers=None):
+    """Metindeki kullanici klasoru yolunu '~' ile, kullanici adini
+    '<kullanici>' ile degistirir (buyuk/kucuk harf duyarsiz)."""
+    import re
+    if not text:
+        return text
+    for m in (markers if markers is not None else _personal_markers()):
+        repl = "~" if ("\\" in m or "/" in m) else "<kullanici>"
+        text = re.sub(re.escape(m), repl, text, flags=re.IGNORECASE)
+    return text
+
+
 def redact_config(config):
     """config.json'un bir kopyasini, gizli/kisisel sayilabilecek alanlari
     (orn. API anahtari) maskeleyerek dondurur."""
@@ -111,15 +140,17 @@ def _tail_file_bytes(path, max_bytes):
         return f.read()
 
 
-def capture_screenshot_png_bytes():
-    """Tum sanal masaustunun (coklu monitor dahil) PNG baytlarini dondurur;
-    basarisiz olursa None. Qt ana thread'ine ihtiyac duymaz (mss dogrudan
-    Windows API'sini kullanir) - arka plan is parcacigindan guvenle cagrilabilir."""
+def capture_screenshot_png_bytes(monitor_index=0):
+    """SADECE izlenen monitorun PNG baytlarini dondurur (ikinci ekrandaki
+    sohbet/tarayici gibi kisisel icerik pakete girmesin); basarisiz olursa
+    None. mss dogrudan Windows API'sini kullanir, arka plandan cagrilabilir."""
     try:
         import mss
         import mss.tools
         with mss.mss() as sct:
-            shot = sct.grab(sct.monitors[0])
+            physical = sct.monitors[1:] or sct.monitors
+            idx = monitor_index if 0 <= monitor_index < len(physical) else 0
+            shot = sct.grab(physical[idx])
             return mss.tools.to_png(shot.rgb, shot.size)
     except Exception as exc:
         logger.error("Ekran goruntusu alinamadi: %s", exc)
@@ -142,19 +173,21 @@ def build_diagnostics_zip(config, log_path, output_path, include_screenshot=Fals
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
         try:
             info = collect_system_info()
-            zf.writestr("sistem_bilgisi.json", json.dumps(info, ensure_ascii=False, indent=2))
+            zf.writestr("sistem_bilgisi.json",
+                        redact_text(json.dumps(info, ensure_ascii=False, indent=2)))
         except Exception as exc:
             logger.error("Sistem bilgisi pakete eklenemedi: %s", exc)
 
         try:
             zf.writestr("config_redacted.json",
-                        json.dumps(redact_config(config), ensure_ascii=False, indent=2))
+                        redact_text(json.dumps(redact_config(config), ensure_ascii=False, indent=2)))
         except Exception as exc:
             logger.error("config.json pakete eklenemedi: %s", exc)
 
         try:
             if log_path and os.path.exists(log_path):
-                zf.writestr("oyuncevirmen.log", _tail_file_bytes(log_path, MAX_LOG_BYTES))
+                raw = _tail_file_bytes(log_path, MAX_LOG_BYTES).decode("utf-8", "replace")
+                zf.writestr("oyuncevirmen.log", redact_text(raw))
         except Exception as exc:
             logger.error("Log dosyasi pakete eklenemedi: %s", exc)
 
