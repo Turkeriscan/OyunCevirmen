@@ -1069,8 +1069,13 @@ class Orchestrator:
         while not self._profile_poll_stop.is_set():
             try:
                 fg_exe = activity_mod.get_foreground_exe_name()
-                self._current_foreground_exe = fg_exe
-                self._sync_active_profile(fg_exe)
+                # Kullanici kendi kontrol paneline/mini panele gecince bu bir
+                # "oyun degisimi" sayilmaz: son gorulen oyun ve onun profili
+                # korunur (aksi halde "Profili kaydet" profili programin
+                # kendisine kaydederdi ve panelde oyunun ayarlari gorunmezdi).
+                if fg_exe and fg_exe != activity_mod.own_exe_name():
+                    self._current_foreground_exe = fg_exe
+                    self._sync_active_profile(fg_exe)
             except Exception as exc:
                 logger.error("Oyun profili senkronizasyonu hata verdi: %s", exc)
             self._profile_poll_stop.wait(profiles_mod.POLL_INTERVAL_SECONDS)

@@ -169,3 +169,12 @@ def test_build_diagnostics_zip_creates_parent_directory(tmp_path):
     with patch.object(diagnostics, "collect_system_info", return_value={}):
         diagnostics.build_diagnostics_zip({}, None, output_path)
     assert os.path.exists(output_path)
+
+
+def test_redact_text_hides_home_folder_and_username():
+    from app.core import diagnostics as d
+    markers = ["C:\\Users\\Ahmet", "C:/Users/Ahmet", "Ahmet"]
+    text = "Hata: C:\\Users\\Ahmet\\OyunCevirmen\\x.py ve c:/users/ahmet/a ve kullanici=Ahmet"
+    out = d.redact_text(text, markers)
+    assert "Ahmet" not in out and "ahmet" not in out
+    assert "~\\OyunCevirmen\\x.py" in out and "<kullanici>" in out

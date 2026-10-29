@@ -507,7 +507,8 @@ class ProfileBar(QtWidgets.QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(px(10))
 
-        self.lbl = label("", "Faint")
+        self.lbl = label("", "Faint", wrap=True)
+        self.lbl.setMinimumWidth(px(120))
         lay.addWidget(self.lbl, 1)
 
         self.combo_enabled = Combo()

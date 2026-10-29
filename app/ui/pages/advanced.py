@@ -223,7 +223,8 @@ class AdvancedPage(Page):
         def worker():
             try:
                 screenshot_bytes = (
-                    diagnostics_mod.capture_screenshot_png_bytes() if include_screenshot else None
+                    diagnostics_mod.capture_screenshot_png_bytes(
+                        int(self.ctx.config.get("capture_monitor_index", 0) or 0)) if include_screenshot else None
                 )
                 output_path = diagnostics_mod.default_output_path()
                 diagnostics_mod.build_diagnostics_zip(
