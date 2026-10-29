@@ -5,3 +5,8 @@ cache/*.sqlite3
 logs/*.log
 config.json
 .claude/
+
+# PyInstaller/Inno Setup derleme ciktilari (buyuk, makineye ozel - bkz. installer/)
+installer/build/
+installer/dist/
+installer/output/

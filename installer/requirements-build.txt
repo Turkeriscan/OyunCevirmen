@@ -1,0 +1,4 @@
+# Kurulum paketi (.exe) derlemek icin GEREKEN ek bagimlilik.
+# Programin CALISMASI icin gerekmez - sadece .exe/kurulum paketi
+# URETMEK isteyen gelistiriciler icin (bkz. installer/README.md).
+pyinstaller>=6.0
