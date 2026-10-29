@@ -45,7 +45,7 @@ def test_cache_key_independent_of_context(tmp_path):
 
     call_count = {"n": 0}
 
-    def fake_translate(self, text, source_lang="auto", target_lang="tr", model=None, context_lines=None):
+    def fake_translate(self, text, source_lang="auto", target_lang="tr", model=None, context_lines=None, glossary_block=""):
         call_count["n"] += 1
         return "Merhaba Dünya"
 
@@ -167,7 +167,7 @@ def test_google_fallback_result_is_cached_under_primary_engine_key(tmp_path):
     ollama_calls = {"n": 0}
     google_calls = {"n": 0}
 
-    def ollama_fails(self, text, source_lang="auto", target_lang="tr", model=None, context_lines=None):
+    def ollama_fails(self, text, source_lang="auto", target_lang="tr", model=None, context_lines=None, glossary_block=""):
         ollama_calls["n"] += 1
         return None  # Ollama cevap vermiyor
 

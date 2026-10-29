@@ -123,6 +123,13 @@ class TranslationPage(Page):
         hl.addWidget(self.strip)
         trial.add(holder)
         self.body.addWidget(trial)
+
+        self.body.addSpacing(px(12))
+        self.body.addWidget(section_header(
+            "Sözlük", "Karakter, yer ve eşya adları için kendi terimlerini tanımla; "
+                      "motor bunları senin yazdığın gibi kullanır."))
+        self._build_glossary_section()
+
         self.finish()
 
         self.combo_ocr.currentIndexChanged.connect(self._hints)
@@ -275,6 +282,162 @@ class TranslationPage(Page):
         if seconds >= 0:
             speed = "hafızadan" if seconds < 0.02 else f"{seconds:.2f} sn"
             self.trial_meta.setText(f"{engine}, {speed}")
+
+    # --------------------------------------------------------------- sozluk
+    def _build_glossary_section(self):
+        g = SettingsGroup()
+        holder = QtWidgets.QWidget()
+        hl = QtWidgets.QVBoxLayout(holder)
+        hl.setContentsMargins(px(20), px(16), px(20), px(16))
+        hl.setSpacing(px(10))
+
+        self.table_glossary = QtWidgets.QTableWidget(0, 3)
+        self.table_glossary.setHorizontalHeaderLabels(["Kaynak", "Hedef", "Çevirme"])
+        self.table_glossary.horizontalHeader().setStretchLastSection(False)
+        self.table_glossary.horizontalHeader().setSectionResizeMode(
+            0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.table_glossary.horizontalHeader().setSectionResizeMode(
+            1, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.table_glossary.horizontalHeader().setSectionResizeMode(
+            2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.table_glossary.verticalHeader().setVisible(False)
+        self.table_glossary.setMinimumHeight(px(160))
+        self.table_glossary.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        hl.addWidget(self.table_glossary)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(px(8))
+        self.btn_glossary_add = text_button("Satır ekle")
+        self.btn_glossary_remove = text_button("Seçili satırı sil", "Danger")
+        self.btn_glossary_import = text_button("İçe aktar (CSV)")
+        self.btn_glossary_export = text_button("Dışa aktar (CSV)")
+        for b in (self.btn_glossary_add, self.btn_glossary_remove,
+                  self.btn_glossary_import, self.btn_glossary_export):
+            btn_row.addWidget(b)
+        btn_row.addStretch(1)
+        hl.addLayout(btn_row)
+        g.add(holder)
+        self.body.addWidget(g)
+
+        self.btn_glossary_add.clicked.connect(self._glossary_add_row)
+        self.btn_glossary_remove.clicked.connect(self._glossary_remove_selected)
+        self.btn_glossary_import.clicked.connect(self._glossary_import_csv)
+        self.btn_glossary_export.clicked.connect(self._glossary_export_csv)
+        self.table_glossary.itemChanged.connect(self._glossary_item_changed)
+
+        self._glossary_loading = False
+        self._reload_glossary_table()
+
+    def _reload_glossary_table(self):
+        from app.core import glossary as glossary_mod
+        glossary_mod.reset_cache()
+        entries = glossary_mod.load_glossary()
+        self._glossary_loading = True
+        try:
+            self.table_glossary.setRowCount(0)
+            for entry in entries:
+                self._glossary_append_row(entry)
+        finally:
+            self._glossary_loading = False
+
+    def _glossary_append_row(self, entry):
+        row = self.table_glossary.rowCount()
+        self.table_glossary.insertRow(row)
+        self.table_glossary.setItem(row, 0, QtWidgets.QTableWidgetItem(entry.get("source", "")))
+        self.table_glossary.setItem(row, 1, QtWidgets.QTableWidgetItem(entry.get("target", "")))
+        check_item = QtWidgets.QTableWidgetItem()
+        check_item.setFlags(
+            QtCore.Qt.ItemFlag.ItemIsUserCheckable | QtCore.Qt.ItemFlag.ItemIsEnabled
+        )
+        check_item.setCheckState(
+            QtCore.Qt.CheckState.Checked if entry.get("no_translate") else QtCore.Qt.CheckState.Unchecked
+        )
+        self.table_glossary.setItem(row, 2, check_item)
+
+    def _glossary_add_row(self):
+        self._glossary_append_row({"source": "", "target": "", "no_translate": False})
+        self.table_glossary.setCurrentCell(self.table_glossary.rowCount() - 1, 0)
+
+    def _glossary_remove_selected(self):
+        rows = sorted({i.row() for i in self.table_glossary.selectedIndexes()}, reverse=True)
+        if not rows:
+            return
+        for row in rows:
+            self.table_glossary.removeRow(row)
+        self._glossary_save_from_table()
+
+    def _glossary_item_changed(self, _item):
+        if self._glossary_loading:
+            return
+        self._glossary_save_from_table()
+
+    def _glossary_collect_entries(self):
+        entries = []
+        for row in range(self.table_glossary.rowCount()):
+            source_item = self.table_glossary.item(row, 0)
+            target_item = self.table_glossary.item(row, 1)
+            check_item = self.table_glossary.item(row, 2)
+            source = (source_item.text().strip() if source_item else "")
+            if not source:
+                continue
+            no_translate = bool(check_item and check_item.checkState() == QtCore.Qt.CheckState.Checked)
+            target = "" if no_translate else (target_item.text().strip() if target_item else "")
+            entries.append({"source": source, "target": target, "no_translate": no_translate})
+        return entries
+
+    def _glossary_save_from_table(self):
+        from app.core import glossary as glossary_mod
+        glossary_mod.save_glossary(self._glossary_collect_entries())
+
+    def _glossary_import_csv(self):
+        path, _filt = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Sözlük içe aktar", "", "CSV dosyası (*.csv)")
+        if not path:
+            return
+        import csv
+        from app.core import glossary as glossary_mod
+        try:
+            with open(path, "r", encoding="utf-8-sig", newline="") as f:
+                reader = csv.DictReader(f)
+                imported = []
+                for row in reader:
+                    source = (row.get("source") or row.get("Kaynak") or "").strip()
+                    if not source:
+                        continue
+                    no_translate_raw = (row.get("no_translate") or row.get("Çevirme") or "").strip().lower()
+                    no_translate = no_translate_raw in ("1", "true", "evet", "yes", "x")
+                    target = (row.get("target") or row.get("Hedef") or "").strip()
+                    imported.append({"source": source, "target": target, "no_translate": no_translate})
+        except OSError as exc:
+            self.ctx.flash(f"Sözlük içe aktarılamadı: {exc}")
+            return
+        existing = {e["source"].lower(): e for e in self._glossary_collect_entries()}
+        for e in imported:
+            existing[e["source"].lower()] = e
+        glossary_mod.save_glossary(list(existing.values()))
+        self._reload_glossary_table()
+        self.ctx.flash(f"{len(imported)} terim içe aktarıldı")
+
+    def _glossary_export_csv(self):
+        path, _filt = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Sözlük dışa aktar", "sozluk.csv", "CSV dosyası (*.csv)")
+        if not path:
+            return
+        import csv
+        try:
+            with open(path, "w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=["source", "target", "no_translate"])
+                writer.writeheader()
+                for e in self._glossary_collect_entries():
+                    writer.writerow({
+                        "source": e["source"], "target": e["target"],
+                        "no_translate": "1" if e["no_translate"] else "0",
+                    })
+        except OSError as exc:
+            self.ctx.flash(f"Sözlük dışa aktarılamadı: {exc}")
+            return
+        self.ctx.flash("Sözlük CSV olarak kaydedildi")
 
 
 def _set(combo, value):

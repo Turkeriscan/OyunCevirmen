@@ -13,6 +13,7 @@ import threading
 import requests
 
 from . import cache as cache_mod
+from . import glossary as glossary_mod
 
 logger = logging.getLogger("OyunCevirmen.translate")
 
@@ -71,14 +72,15 @@ class OllamaTranslator:
         except Exception:
             return False
 
-    def translate(self, text, source_lang="auto", target_lang="tr", model=None, context_lines=None):
+    def translate(self, text, source_lang="auto", target_lang="tr", model=None,
+                  context_lines=None, glossary_block=""):
         # num_predict girdi uzunluguyla orantili: kisa bir oyun ici yazi icin
         # modelin yuzlerce token'lik alakasiz bir metin ("sozluk", "aciklama"
         # vb.) uretip halusinasyon gormesini onler.
         word_count = max(1, len(text.split()))
         num_predict = max(24, min(300, word_count * 5 + 20))
 
-        system_content = SYSTEM_PROMPT_TR + _build_context_block(context_lines)
+        system_content = SYSTEM_PROMPT_TR + _build_context_block(context_lines) + glossary_block
 
         payload = {
             "model": model or self.model,
@@ -190,6 +192,17 @@ class TranslationManager:
             return False
         return bool(allowed)
 
+    def _translate_via_google(self, text, source_lang, target_lang, glossary_entries):
+        """Google Translate sistem talimati OKUYAMADIGI icin, oyun
+        sozlugundeki terimler Google'a gonderilmeden once bir YER
+        TUTUCUYLA korunur; Google ceviriyi bitirince sozlukteki hedef
+        terimle (veya "cevirme" isaretliyse kaynak terimle) geri konur."""
+        protected_text, matches = glossary_mod.protect_terms(text, glossary_entries)
+        result = self.google.translate(protected_text, source_lang, target_lang)
+        if result:
+            result = glossary_mod.restore_terms(result, matches)
+        return result
+
     def translate(self, text, source_lang=None, target_lang=None, context_lines=None):
         target_lang = target_lang or self.config.get("target_lang", "tr")
         source_lang = source_lang or self.config.get("source_lang", "auto")
@@ -212,9 +225,17 @@ class TranslationManager:
         self.ollama.host = self.config.get("ollama_host", self.ollama.host).rstrip("/")
         current_model = self.config.get("ollama_model", self.ollama.model)
 
+        # Oyun sozlugu (karakter/yer/esya adlari): Ollama'ya sistem
+        # talimatinda dogrudan verilir; Google'a gonderilirken terimler
+        # yer tutucuyla korunup sonra sozlukteki hedef terimle geri konur
+        # (bkz. _translate_via_google).
+        glossary_entries = glossary_mod.load_glossary()
+        glossary_block = glossary_mod.build_ollama_system_block(glossary_entries)
+
         if engine_pref == "ollama":
             result = self.ollama.translate(
-                text, source_lang, target_lang, model=current_model, context_lines=context_lines
+                text, source_lang, target_lang, model=current_model,
+                context_lines=context_lines, glossary_block=glossary_block,
             )
             if result and _looks_like_hallucination(text, result):
                 if self._google_fallback_allowed():
@@ -222,7 +243,7 @@ class TranslationManager:
                         "Ollama supheli/alakasiz ceviri uretti, Google'a geciliyor. "
                         "Kaynak=%r Model_ciktisi=%r", text[:60], result[:80],
                     )
-                    result = self.google.translate(text, source_lang, target_lang)
+                    result = self._translate_via_google(text, source_lang, target_lang, glossary_entries)
                     used_engine = "google"
                     if result and _looks_like_hallucination(text, result):
                         result = None  # Google de supheliyse, hicbir sey gosterme
@@ -232,16 +253,17 @@ class TranslationManager:
             elif not result:
                 if self._google_fallback_allowed():
                     logger.info("Ollama basarisiz, Google'a geciliyor: %r", text[:40])
-                    result = self.google.translate(text, source_lang, target_lang)
+                    result = self._translate_via_google(text, source_lang, target_lang, glossary_entries)
                     used_engine = "google"
                 else:
                     logger.info("Ollama basarisiz, Google izni yok, cevrilemedi: %r", text[:40])
         else:
-            result = self.google.translate(text, source_lang, target_lang)
+            result = self._translate_via_google(text, source_lang, target_lang, glossary_entries)
             used_engine = "google"
             if not result:
                 result = self.ollama.translate(
-                    text, source_lang, target_lang, model=current_model, context_lines=context_lines
+                    text, source_lang, target_lang, model=current_model,
+                    context_lines=context_lines, glossary_block=glossary_block,
                 )
                 used_engine = "ollama"
                 if result and _looks_like_hallucination(text, result):

@@ -336,6 +336,21 @@ QMenu {{
 }}
 QMenu::item {{ padding: {r(6)}px {r(18)}px; border-radius: {r(5)}px; }}
 QMenu::item:selected {{ background: {RAISED_HI}; }}
+
+/* ------------------------------------------------ tablo (sozluk vb.) */
+QTableWidget {{
+    background: {RAISED}; color: {PAPER}; border: 1px solid {LINE};
+    border-radius: {r(8)}px; gridline-color: {LINE_SOFT};
+    selection-background-color: {SUB_WASH}; selection-color: {PAPER};
+    {_css_font("body", 9.5)}
+}}
+QTableWidget::item {{ padding: {r(4)}px {r(6)}px; }}
+QHeaderView::section {{
+    background: {SURFACE}; color: {MUTED}; border: none;
+    border-bottom: 1px solid {LINE}; padding: {r(6)}px {r(8)}px;
+    {_css_font("body_medium", 9)}
+}}
+QTableWidget QLineEdit {{ background: {RAISED_HI}; border: 1px solid {SUB}; }}
 """
     return _scope(q, root)
 
