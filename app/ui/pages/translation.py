@@ -7,7 +7,6 @@ from PyQt6 import QtCore, QtWidgets
 
 from app import config as config_mod
 from app.core import ocr as ocr_mod
-from app.ui import theme as T
 from app.ui.theme import px
 from app.ui.widgets import (Combo, IconButton, Page, SettingsGroup, label, section_header,
                             text_button)

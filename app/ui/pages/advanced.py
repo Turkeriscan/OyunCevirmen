@@ -1,5 +1,5 @@
 """Gelismis sayfasi: canli mod, filtreler, ekran secimi, hafiza, sifirlama."""
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtWidgets
 
 from app.core import capture as capture_mod
 from app.ui.theme import px

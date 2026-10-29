@@ -132,8 +132,9 @@ class ScreenCapturer:
                     output_idx=self.monitor_index, output_color="BGR"
                 )
                 if self._dxcam_cam is not None:
-                    # Tek seferlik test yakalama
-                    test = self._dxcam_cam.grab()
+                    # Tek seferlik test yakalama (bazi GPU/surucu kombinasyonlarinda
+                    # create() basarili olsa da grab() patlar; burada yakalanir)
+                    self._dxcam_cam.grab()
                     self.backend = "dxcam"
                     origin = _dxcam_output_origin(self._dxcam_cam)
                     if origin is None:

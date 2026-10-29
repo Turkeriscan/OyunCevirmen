@@ -9,7 +9,6 @@ Kurallar:
  - Metin zaten Turkce ise atlanir (ceviriye gerek yok)
 """
 import re
-import string
 
 try:
     from langdetect import detect, DetectorFactory, LangDetectException

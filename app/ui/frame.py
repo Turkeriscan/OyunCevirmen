@@ -14,12 +14,12 @@ kendi baslik cubugu kaldirilir, WM_NCHITTEST ile kenarlar Windows'a bildirilir.
 import ctypes
 import os
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 from app.ui import icons, logo
 from app.ui import theme as T
 from app.ui.theme import px
-from app.ui.widgets import IconButton, Lamp, label
+from app.ui.widgets import Lamp, label
 
 IS_WIN = os.name == "nt"
 

@@ -7,11 +7,8 @@ Perdenin altinda iki "projektor" dugmesi: Aninda tara ve Canli mod.
 Sagda akis: her ceviri, bir .srt altyazi dosyasindaki gibi numarasi ve
 zaman koduyla listelenir.
 """
-import time
-
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from app.ui import icons
 from app.ui import theme as T
 from app.ui.theme import px, pxf
 from app.ui.widgets import IconButton, Keycaps, label, scroll_page

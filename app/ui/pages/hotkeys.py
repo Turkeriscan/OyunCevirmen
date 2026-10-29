@@ -1,6 +1,4 @@
 """Kisayollar sayfasi: tiklayip yeni tusa basarak degistirme."""
-from PyQt6 import QtWidgets
-
 from app.ui.theme import px
 from app.ui.widgets import HotkeyRecorder, Page, SettingsGroup, hotkey_text, label, section_header
 
