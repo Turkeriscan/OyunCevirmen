@@ -350,8 +350,9 @@ class ModeButton(QtWidgets.QAbstractButton):
 
 # ================================================================ Akis
 class CueRow(QtWidgets.QWidget):
-    def __init__(self, number, tc, translated, original, parent=None):
+    def __init__(self, ctx, number, tc, translated, original, parent=None):
         super().__init__(parent)
+        self.ctx = ctx
         self._text = (translated, original)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_Hover, True)
         lay = QtWidgets.QVBoxLayout(self)
@@ -365,8 +366,8 @@ class CueRow(QtWidgets.QWidget):
         meta.addWidget(t)
         meta.addStretch(1)
         lay.addLayout(meta)
-        tr = label(translated, "CueText", wrap=True, selectable=True)
-        lay.addWidget(tr)
+        self.tr_label = label(translated, "CueText", wrap=True, selectable=True)
+        lay.addWidget(self.tr_label)
         lay.addWidget(label(original, "CueOriginal", wrap=True, selectable=True))
         self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._menu)
@@ -375,11 +376,45 @@ class CueRow(QtWidgets.QWidget):
         menu = QtWidgets.QMenu(self)
         a1 = menu.addAction("Çeviriyi kopyala")
         a2 = menu.addAction("Orijinali kopyala")
+        menu.addSeparator()
+        a3 = menu.addAction("Çeviriyi düzelt…")
+        a4 = None
+        orchestrator = getattr(self.ctx, "orchestrator", None)
+        original = self._text[1]
+        if orchestrator is not None and orchestrator.is_manually_corrected(original):
+            a4 = menu.addAction("Düzeltmeyi geri al")
         act = menu.exec(self.mapToGlobal(pos))
         if act == a1:
             QtWidgets.QApplication.clipboard().setText(self._text[0])
         elif act == a2:
             QtWidgets.QApplication.clipboard().setText(self._text[1])
+        elif act == a3:
+            self._correct(original)
+        elif a4 is not None and act == a4:
+            self._undo(original)
+
+    def _correct(self, original):
+        orchestrator = getattr(self.ctx, "orchestrator", None)
+        if orchestrator is None:
+            return
+        current = self.tr_label.text()
+        new_text, ok = QtWidgets.QInputDialog.getText(
+            self, "Çeviriyi düzelt", "Bu satırın çevirisi oyunda hemen kullanılır:",
+            text=current,
+        )
+        if not ok:
+            return
+        if orchestrator.correct_translation(original, new_text):
+            self.tr_label.setText(new_text.strip())
+            self._text = (new_text.strip(), self._text[1])
+            self.ctx.flash("Çeviri düzeltildi")
+
+    def _undo(self, original):
+        orchestrator = getattr(self.ctx, "orchestrator", None)
+        if orchestrator is None:
+            return
+        orchestrator.undo_correction(original)
+        self.ctx.flash("Düzeltme geri alındı")
 
     def paintEvent(self, e):
         if self.underMouse():
@@ -389,8 +424,9 @@ class CueRow(QtWidgets.QWidget):
 
 
 class Transcript(QtWidgets.QFrame):
-    def __init__(self, parent=None):
+    def __init__(self, ctx, parent=None):
         super().__init__(parent)
+        self.ctx = ctx
         self.setObjectName("Transcript")
         lay = QtWidgets.QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -445,7 +481,7 @@ class Transcript(QtWidgets.QFrame):
                 hl.setContentsMargins(px(20), 0, px(18), 0)
                 hl.addWidget(sep)
                 self.list.addWidget(holder)
-            self.list.addWidget(CueRow(total - i, timecode(ts - started_at), tr, orig))
+            self.list.addWidget(CueRow(self.ctx, total - i, timecode(ts - started_at), tr, orig))
         self.list.addStretch(1)
 
     def as_srt(self, started_at):
@@ -499,7 +535,7 @@ class ScenePage(QtWidgets.QWidget):
         ll.addLayout(modes)
         lay.addWidget(left, 1)
 
-        self.transcript = Transcript()
+        self.transcript = Transcript(ctx)
         self.transcript.setFixedWidth(px(340))
         self._left = left
         self.transcript.btn_copy.clicked.connect(self._copy)

@@ -95,13 +95,13 @@ def test_set_max_memory_items_rejects_non_positive(cache):
 # ------------------------------------------- yedek motor (is_fallback) + suresi dolma
 def test_set_with_is_fallback_stores_flag(cache):
     cache.set("Hi", "en", "tr", "ollama", "Selam", is_fallback=True)
-    _, is_fallback, _ = cache._mem[cache_mod._make_key("Hi", "en", "tr", "ollama")]
+    _, is_fallback, _, _ = cache._mem[cache_mod._make_key("Hi", "en", "tr", "ollama")]
     assert is_fallback is True
 
 
 def test_set_default_is_not_fallback(cache):
     cache.set("Hi", "en", "tr", "ollama", "Selam")
-    _, is_fallback, _ = cache._mem[cache_mod._make_key("Hi", "en", "tr", "ollama")]
+    _, is_fallback, _, _ = cache._mem[cache_mod._make_key("Hi", "en", "tr", "ollama")]
     assert is_fallback is False
 
 
@@ -113,8 +113,8 @@ def test_fallback_entry_expires_after_ttl(cache):
     key = cache_mod._make_key("Hi", "en", "tr", "ollama")
     # Hem bellekteki hem diskteki zaman damgasini (gercek yaslanmayla
     # tutarli sekilde, ikisi birden) gecmise tasiyarak "eskimis" simule et.
-    text, is_fallback, _created = cache._mem[key]
-    cache._mem[key] = (text, is_fallback, _created - cache_mod.FALLBACK_TTL_SECONDS - 1)
+    text, is_fallback, _created, is_manual = cache._mem[key]
+    cache._mem[key] = (text, is_fallback, _created - cache_mod.FALLBACK_TTL_SECONDS - 1, is_manual)
     cache._conn.execute(
         "UPDATE translations SET created_at = ? WHERE key = ?",
         ("2000-01-01 00:00:00", key),
@@ -133,8 +133,8 @@ def test_non_fallback_entry_never_expires(cache):
     eski olsa da suresi dolmamali."""
     cache.set("Hi", "en", "tr", "ollama", "Selam", is_fallback=False)
     key = cache_mod._make_key("Hi", "en", "tr", "ollama")
-    text, is_fallback, _created = cache._mem[key]
-    cache._mem[key] = (text, is_fallback, _created - 10_000_000)
+    text, is_fallback, _created, is_manual = cache._mem[key]
+    cache._mem[key] = (text, is_fallback, _created - 10_000_000, is_manual)
     assert cache.get("Hi", "en", "tr", "ollama") == "Selam"
 
 
@@ -159,7 +159,75 @@ def test_rewriting_fallback_entry_resets_ttl_clock(cache):
     yazilirsa, TTL saati sIfirlanmali (surekli taze yedek kalmali)."""
     key = cache_mod._make_key("Hi", "en", "tr", "ollama")
     cache.set("Hi", "en", "tr", "ollama", "Selam", is_fallback=True)
-    text, is_fallback, created = cache._mem[key]
-    cache._mem[key] = (text, is_fallback, created - cache_mod.FALLBACK_TTL_SECONDS + 5)
+    text, is_fallback, created, is_manual = cache._mem[key]
+    cache._mem[key] = (text, is_fallback, created - cache_mod.FALLBACK_TTL_SECONDS + 5, is_manual)
     cache.set("Hi", "en", "tr", "ollama", "Selam", is_fallback=True)  # tekrar yazildi
     assert cache.get("Hi", "en", "tr", "ollama") == "Selam"
+
+
+# ---------------------------------------------- elle duzeltme (set_manual)
+def test_set_manual_marks_entry_as_manual(cache):
+    cache.set_manual("Hi", "en", "tr", "ollama", "Selam (elle)")
+    assert cache.get("Hi", "en", "tr", "ollama") == "Selam (elle)"
+    assert cache.is_manual("Hi", "en", "tr", "ollama") is True
+
+
+def test_normal_set_does_not_overwrite_manual_entry(cache):
+    """Bir motor cevirisi, kullanicinin elle duzelttigi bir satirin
+    UZERINE YAZAMAMALI."""
+    cache.set_manual("Hi", "en", "tr", "ollama", "Selam (elle)")
+    cache.set("Hi", "en", "tr", "ollama", "Motorun cevirisi")
+    assert cache.get("Hi", "en", "tr", "ollama") == "Selam (elle)"
+
+
+def test_normal_set_protects_manual_entry_not_yet_in_memory(tmp_path):
+    """Manual isaret SADECE DISKTE olsa bile (bu surecte henuz get()
+    cagrilip bellege yuklenmemis olsa da), bir motor yazisi onu
+    EZMEMELI."""
+    path = str(tmp_path / "manual_disk.sqlite3")
+    c = TranslationCache(max_memory_items=10, db_path=path)
+    c.set_manual("Hi", "en", "tr", "ollama", "Selam (elle)")
+    c._mem.clear()  # "baska bir oturum" simulasyonu - sadece diskte kalsin
+
+    c.set("Hi", "en", "tr", "ollama", "Motorun cevirisi")
+    assert c.get("Hi", "en", "tr", "ollama") == "Selam (elle)"
+
+
+def test_set_manual_overwrites_existing_normal_entry(cache):
+    cache.set("Hi", "en", "tr", "ollama", "Normal ceviri")
+    cache.set_manual("Hi", "en", "tr", "ollama", "Elle duzeltilmis")
+    assert cache.get("Hi", "en", "tr", "ollama") == "Elle duzeltilmis"
+
+
+def test_set_manual_clears_fallback_flag(cache):
+    cache.set("Hi", "en", "tr", "ollama", "Yedekten", is_fallback=True)
+    cache.set_manual("Hi", "en", "tr", "ollama", "Elle duzeltilmis")
+    key = cache_mod._make_key("Hi", "en", "tr", "ollama")
+    _text, is_fallback, _created, is_manual = cache._mem[key]
+    assert is_fallback is False
+    assert is_manual is True
+
+
+def test_is_manual_false_for_unknown_entry(cache):
+    assert cache.is_manual("Yok", "en", "tr", "ollama") is False
+
+
+def test_clear_manual_undoes_protection_but_keeps_text(cache):
+    cache.set_manual("Hi", "en", "tr", "ollama", "Elle duzeltilmis")
+    cache.clear_manual("Hi", "en", "tr", "ollama")
+
+    assert cache.is_manual("Hi", "en", "tr", "ollama") is False
+    assert cache.get("Hi", "en", "tr", "ollama") == "Elle duzeltilmis"  # metin kaybolmadi
+
+    cache.set("Hi", "en", "tr", "ollama", "Yeni motor cevirisi")
+    assert cache.get("Hi", "en", "tr", "ollama") == "Yeni motor cevirisi"  # artik ezilebilir
+
+
+def test_clear_manual_on_disk_only_entry(tmp_path):
+    path = str(tmp_path / "manual_undo_disk.sqlite3")
+    c = TranslationCache(max_memory_items=10, db_path=path)
+    c.set_manual("Hi", "en", "tr", "ollama", "Elle duzeltilmis")
+    c._mem.clear()
+
+    c.clear_manual("Hi", "en", "tr", "ollama")
+    assert c.is_manual("Hi", "en", "tr", "ollama") is False

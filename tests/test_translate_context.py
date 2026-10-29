@@ -210,11 +210,11 @@ def test_fallback_cache_entry_is_marked_and_expires_allowing_ollama_retry(tmp_pa
         manager.translate("Hello Again")
 
     key = cache_mod._make_key("Hello Again", "auto", "tr", "ollama")
-    text, is_fallback, created = manager.cache._mem[key]
+    text, is_fallback, created, is_manual = manager.cache._mem[key]
     assert is_fallback is True
     # Suresini (hem bellekte hem diskte, gercek yaslanmayla tutarli olacak
     # sekilde) simule olarak doldur.
-    manager.cache._mem[key] = (text, is_fallback, created - cache_mod.FALLBACK_TTL_SECONDS - 1)
+    manager.cache._mem[key] = (text, is_fallback, created - cache_mod.FALLBACK_TTL_SECONDS - 1, is_manual)
     manager.cache._conn.execute(
         "UPDATE translations SET created_at = ? WHERE key = ?", ("2000-01-01 00:00:00", key)
     )
@@ -245,5 +245,5 @@ def test_non_fallback_result_cached_without_fallback_flag(tmp_path):
         manager.translate("Hi")
 
     key = cache_mod._make_key("Hi", "auto", "tr", "ollama")
-    _text, is_fallback, _created = manager.cache._mem[key]
+    _text, is_fallback, _created, _is_manual = manager.cache._mem[key]
     assert is_fallback is False

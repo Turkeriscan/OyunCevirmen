@@ -693,6 +693,40 @@ class Orchestrator:
         self.recent.appendleft((time.time(), original, translated))
         self.recent_version += 1
 
+    # ------------------------------------------------ elle ceviri duzeltme
+    def _cache_identity(self):
+        """Onbellek anahtarinin dil/motor kismini (su anki ayarlara gore)
+        dondurur - elle duzeltme de NORMAL cevirilerle AYNI anahtar
+        semasini kullanmali ki get() onu dogru bulsun."""
+        return (
+            self.config.get("source_lang", "auto"),
+            self.config.get("target_lang", "tr"),
+            self.config.get("translate_engine", "ollama"),
+        )
+
+    def correct_translation(self, original, corrected):
+        """Kullanicinin Sahne sayfasindaki akistan "Çeviriyi düzelt" ile
+        elle girdigi ceviri. Onbellege KALICI olarak (hicbir motor
+        tarafindan ezilmeyecek sekilde) yazilir ve akista hemen gorunur."""
+        corrected = (corrected or "").strip()
+        if not corrected:
+            return False
+        source_lang, target_lang, engine_pref = self._cache_identity()
+        self.translator.cache.set_manual(original, source_lang, target_lang, engine_pref, corrected)
+        self._remember(original, corrected)
+        return True
+
+    def undo_correction(self, original):
+        """"Düzeltmeyi geri al": kullanicinin elle yazdigi metin akista
+        kalir, ama bundan sonra motorlar bu satiri yeniden cevirip
+        uzerine yazabilir."""
+        source_lang, target_lang, engine_pref = self._cache_identity()
+        self.translator.cache.clear_manual(original, source_lang, target_lang, engine_pref)
+
+    def is_manually_corrected(self, original):
+        source_lang, target_lang, engine_pref = self._cache_identity()
+        return self.translator.cache.is_manual(original, source_lang, target_lang, engine_pref)
+
     # ------------------------------------------------------- monitor secimi
     def change_monitor(self, index):
         """Yakalanacak monitoru calisirken degistirir (program yeniden
