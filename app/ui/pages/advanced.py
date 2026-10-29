@@ -1,11 +1,20 @@
 """Gelismis sayfasi: canli mod, filtreler, ekran secimi, hafiza, sifirlama."""
-from PyQt6 import QtWidgets
+import os
+import threading
 
+from PyQt6 import QtCore, QtWidgets
+
+from app import config as config_mod
 from app.core import capture as capture_mod
+from app.core import diagnostics as diagnostics_mod
 from app.core import winhotkey as winhotkey_mod
 from app.ui.theme import px
 from app.ui.widgets import (Combo, IconButton, Page, SettingsGroup, Stepper, ValueSlider, label,
                             section_header, text_button)
+
+
+class _DiagnosticsBridge(QtCore.QObject):
+    done = QtCore.pyqtSignal(bool, str)
 
 
 class AdvancedPage(Page):
@@ -128,6 +137,18 @@ class AdvancedPage(Page):
         g6.row("Kısayollar oyunda çalışmıyor", "Oyun \"Yönetici olarak çalıştır\" ile açıksa, "
                "kısayolların çalışması için bu programın da Yönetici olması gerekir.",
                self.btn_relaunch_admin)
+        diag = QtWidgets.QHBoxLayout()
+        diag.setSpacing(px(10))
+        self.combo_diag_screenshot = Combo()
+        self.combo_diag_screenshot.addItem("Ekran görüntüsü ekleme", False)
+        self.combo_diag_screenshot.addItem("Ekran görüntüsü ekle", True)
+        self.btn_diagnostics = text_button("Paket oluştur (Masaüstüne)")
+        self.btn_diagnostics.clicked.connect(self._build_diagnostics)
+        diag.addWidget(self.combo_diag_screenshot)
+        diag.addWidget(self.btn_diagnostics)
+        g6.row("Sorun bildirimi için paket oluştur", "Son günlükler, ayarların (API anahtarları "
+               "gizlenmiş) ve sistem bilgisinin (Windows sürümü, ekran kartı, ekran düzeni) "
+               "yer aldığı bir .zip dosyası Masaüstüne kaydedilir.", diag)
         self.body.addWidget(g6)
 
         self.body.addSpacing(px(10))
@@ -141,6 +162,9 @@ class AdvancedPage(Page):
         g4.row("Tüm ayarlar", "Her şey ilk kurulumdaki haline döner. Çeviri hafızası silinmez.", b2)
         self.body.addWidget(g4)
         self.finish()
+
+        self._diag_bridge = _DiagnosticsBridge()
+        self._diag_bridge.done.connect(self._on_diagnostics_done)
 
         self.sl_interval.valueChanged.connect(ctx.schedule_save)
         self.sl_conf.valueChanged.connect(ctx.schedule_save)
@@ -184,6 +208,37 @@ class AdvancedPage(Page):
             self.ctx.orchestrator.request_quit()
         else:
             self.ctx.flash("Yönetici olarak başlatma iptal edildi veya başarısız oldu")
+
+    def _build_diagnostics(self):
+        include_screenshot = bool(self.combo_diag_screenshot.currentData())
+        config_snapshot = dict(self.ctx.config)
+        log_path = os.path.join(config_mod.BASE_DIR, "logs", "oyuncevirmen.log")
+        self.btn_diagnostics.setEnabled(False)
+        self.btn_diagnostics.setText("Paket oluşturuluyor…")
+
+        def worker():
+            try:
+                screenshot_bytes = (
+                    diagnostics_mod.capture_screenshot_png_bytes() if include_screenshot else None
+                )
+                output_path = diagnostics_mod.default_output_path()
+                diagnostics_mod.build_diagnostics_zip(
+                    config_snapshot, log_path, output_path,
+                    include_screenshot=include_screenshot, screenshot_bytes=screenshot_bytes,
+                )
+                self._diag_bridge.done.emit(True, output_path)
+            except Exception as exc:
+                self._diag_bridge.done.emit(False, str(exc))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_diagnostics_done(self, ok, message):
+        self.btn_diagnostics.setEnabled(True)
+        self.btn_diagnostics.setText("Paket oluştur (Masaüstüne)")
+        if ok:
+            self.ctx.flash(f"Paket oluşturuldu: {os.path.basename(message)}")
+        else:
+            self.ctx.flash("Paket oluşturulamadı; Günlük'e bak")
 
     def _clear_regions(self):
         self.ctx.config["exclude_regions"] = []
