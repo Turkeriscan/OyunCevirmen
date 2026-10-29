@@ -18,6 +18,9 @@ OCR_ENGINES = [
 TRANSLATE_ENGINES = [
     ("ollama", "Ollama", "Bilgisayarında çalışır, internet gerekmez."),
     ("google", "Google Translate", "İnternet gerekir; Ollama yoksa yedek olarak da kullanılır."),
+    ("argos", "Argos Translate (çevrimdışı)", "İnternet gerekmez; isteğe bağlı bir kurulum gerektirir "
+                                               "(kurulu değilse otomatik atlanır)."),
+    ("deepl", "DeepL", "İnternet ve ücretsiz bir API anahtarı gerekir (aşağıda girilir)."),
 ]
 SOURCE_LANGS = [
     ("auto", "Otomatik algıla"), ("en", "İngilizce"), ("de", "Almanca"),
@@ -85,6 +88,14 @@ class TranslationPage(Page):
         self.edit_host = QtWidgets.QLineEdit()
         self.edit_host.setMinimumWidth(px(220))
         g.row("Ollama adresi", "Genelde değiştirmen gerekmez.", self.edit_host)
+
+        self.edit_deepl_key = QtWidgets.QLineEdit()
+        self.edit_deepl_key.setMinimumWidth(px(220))
+        self.edit_deepl_key.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+        self.deepl_row = g.row(
+            "DeepL API anahtarı", "www.deepl.com/pro-api adresinden ücretsiz alınır.",
+            self.edit_deepl_key,
+        )
         self.body.addWidget(g)
 
         self.body.addSpacing(px(12))
@@ -145,6 +156,7 @@ class TranslationPage(Page):
         self.combo_model.currentIndexChanged.connect(ctx.schedule_save)
         self.combo_model.editTextChanged.connect(ctx.schedule_save)
         self.edit_host.editingFinished.connect(ctx.schedule_save)
+        self.edit_deepl_key.editingFinished.connect(ctx.schedule_save)
 
     # ---------------------------------------------------------- ayarlar
     def load(self, cfg):
@@ -152,6 +164,7 @@ class TranslationPage(Page):
         _set(self.combo_translate, cfg.get("translate_engine", "ollama"))
         self.combo_model.setCurrentText(cfg.get("ollama_model", "aya-expanse:8b"))
         self.edit_host.setText(cfg.get("ollama_host", "http://127.0.0.1:11434"))
+        self.edit_deepl_key.setText(cfg.get("deepl_api_key", ""))
         lang = cfg.get("source_lang", "auto")
         if self.combo_lang.findData(lang) < 0:
             self.combo_lang.addItem(lang, lang)
@@ -169,6 +182,7 @@ class TranslationPage(Page):
         cfg["translate_engine"] = self.combo_translate.currentData()
         cfg["ollama_model"] = self.combo_model.currentText().strip()
         cfg["ollama_host"] = self.edit_host.text().strip() or "http://127.0.0.1:11434"
+        cfg["deepl_api_key"] = self.edit_deepl_key.text().strip()
         cfg["source_lang"] = self.combo_lang.currentData() or "auto"
         # allow_google_fallback BILEREK burada yazilmiyor; kendi ozel
         # degisim isleyicisi (_google_perm_changed) tarafindan aninda

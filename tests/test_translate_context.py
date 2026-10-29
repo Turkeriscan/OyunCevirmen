@@ -264,3 +264,186 @@ def test_ocr_tolerance_rule_does_not_weaken_hallucination_guard():
     long_fake = "Bu çok uzun ve alakasız bir açıklama metni " * 5
     assert translate._looks_like_hallucination("Hi", long_fake)
     assert not translate._looks_like_hallucination("Hi", "Merhaba")
+
+
+# ------------------------------------------------------ 2.5: cok motorlu zincir
+def test_argos_unavailable_when_not_installed():
+    """Argos Translate kurulu degilse (gercek ortamda kurulu olmayabilir),
+    is_available() False donup sessizce atlanmali - hata firlatmamali."""
+    translator = translate.ArgosTranslator()
+    # Gercekten kurulu olup olmadigina bakmaksizin, API cokmemeli:
+    available = translator.is_available()
+    assert isinstance(available, bool)
+    if not available:
+        assert translator.translate("Hello") is None
+
+
+def test_argos_unavailable_simulated_via_import_error():
+    translator = translate.ArgosTranslator()
+    with patch("builtins.__import__", side_effect=ImportError("yok")):
+        assert translator.is_available() is False
+        assert translator.translate("Hello") is None
+
+
+def test_deepl_without_api_key_is_not_configured():
+    translator = translate.DeepLTranslator(api_key="")
+    assert translator.is_configured() is False
+    assert translator.translate("Hello") is None
+
+
+def test_deepl_with_api_key_calls_api():
+    translator = translate.DeepLTranslator(api_key="test-key")
+    assert translator.is_configured() is True
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"translations": [{"text": "Merhaba"}]}
+
+    captured = {}
+
+    def fake_post(url, data=None, timeout=None):
+        captured["url"] = url
+        captured["data"] = data
+        return _FakeResponse()
+
+    with patch.object(translator._session, "post", side_effect=fake_post):
+        result = translator.translate("Hello", source_lang="en", target_lang="tr")
+
+    assert result == "Merhaba"
+    assert captured["data"]["auth_key"] == "test-key"
+    assert captured["data"]["target_lang"] == "TR"
+    assert captured["data"]["source_lang"] == "EN"
+
+
+def test_deepl_handles_request_exception_gracefully():
+    translator = translate.DeepLTranslator(api_key="test-key")
+    with patch.object(translator._session, "post", side_effect=RuntimeError("ag hatasi")):
+        assert translator.translate("Hello") is None
+
+
+def test_engine_order_puts_primary_first_then_fallback_chain():
+    config = {"translate_engine": "ollama", "fallback_order": ["ollama", "argos", "google"]}
+    manager = translate.TranslationManager(config)
+    assert manager._engine_order("ollama") == ["ollama", "argos", "google"]
+
+
+def test_engine_order_dedupes_primary_from_fallback_chain():
+    config = {"fallback_order": ["ollama", "argos", "google"]}
+    manager = translate.TranslationManager(config)
+    assert manager._engine_order("google") == ["google", "ollama", "argos"]
+
+
+def test_engine_order_falls_back_to_default_when_unset():
+    manager = translate.TranslationManager({})
+    assert manager._engine_order("ollama") == translate.DEFAULT_FALLBACK_ORDER
+
+
+def test_engine_order_ignores_unknown_engine_names():
+    config = {"fallback_order": ["ollama", "bilinmeyen_motor", "google"]}
+    manager = translate.TranslationManager(config)
+    assert manager._engine_order("ollama") == ["ollama", "google"]
+
+
+def test_chain_tries_argos_before_google_when_ollama_fails(tmp_path):
+    """Ollama basarisiz olunca, fallback_order'da Google'dan ONCE gelen
+    Argos (kuruluysa) denenmeli."""
+    from app.core import cache as cache_mod
+    import os
+
+    config = {
+        "translate_engine": "ollama", "ollama_host": "http://127.0.0.1:11434",
+        "ollama_model": "m", "source_lang": "auto", "target_lang": "tr",
+        "max_cache_memory_items": 100, "allow_google_fallback": True,
+        "fallback_order": ["ollama", "argos", "google"],
+    }
+    manager = translate.TranslationManager(config)
+    manager.cache = cache_mod.TranslationCache(
+        max_memory_items=100, db_path=os.path.join(str(tmp_path), "chain.sqlite3")
+    )
+
+    google_calls = {"n": 0}
+
+    def google_translate(self, text, source_lang="auto", target_lang="tr"):
+        google_calls["n"] += 1
+        return "Google'dan"
+
+    with patch.object(translate.OllamaTranslator, "translate", lambda *a, **k: None), \
+         patch.object(translate.ArgosTranslator, "is_available", return_value=True), \
+         patch.object(translate.ArgosTranslator, "translate", return_value="Argos'tan"), \
+         patch.object(translate.GoogleFallbackTranslator, "translate", google_translate):
+        result = manager.translate("Hello")
+
+    assert result == "Argos'tan"
+    assert google_calls["n"] == 0  # Argos basarili oldu, Google'a hic gidilmedi
+
+
+def test_argos_skipped_silently_when_unavailable(tmp_path):
+    from app.core import cache as cache_mod
+    import os
+
+    config = {
+        "translate_engine": "ollama", "source_lang": "auto", "target_lang": "tr",
+        "max_cache_memory_items": 100, "allow_google_fallback": True,
+        "fallback_order": ["ollama", "argos", "google"],
+    }
+    manager = translate.TranslationManager(config)
+    manager.cache = cache_mod.TranslationCache(
+        max_memory_items=100, db_path=os.path.join(str(tmp_path), "chain2.sqlite3")
+    )
+
+    with patch.object(translate.OllamaTranslator, "translate", lambda *a, **k: None), \
+         patch.object(translate.ArgosTranslator, "is_available", return_value=False), \
+         patch.object(translate.GoogleFallbackTranslator, "translate", lambda *a, **k: "Google'dan"):
+        result = manager.translate("Hello")
+
+    assert result == "Google'dan"
+
+
+def test_google_as_primary_does_not_require_permission(tmp_path):
+    """Google BIRINCIL motor olarak secilmisse (position 0), izin
+    kontrolu hic yapilmamali."""
+    from app.core import cache as cache_mod
+    import os
+
+    config = {
+        "translate_engine": "google", "source_lang": "auto", "target_lang": "tr",
+        "max_cache_memory_items": 100, "allow_google_fallback": None,  # izin SORULMADI
+        "fallback_order": [],
+    }
+    manager = translate.TranslationManager(config)
+    manager.cache = cache_mod.TranslationCache(
+        max_memory_items=100, db_path=os.path.join(str(tmp_path), "chain3.sqlite3")
+    )
+
+    with patch.object(translate.GoogleFallbackTranslator, "translate", lambda *a, **k: "Merhaba"):
+        result = manager.translate("Hello")
+
+    assert result == "Merhaba"
+
+
+def test_hallucination_check_applies_uniformly_to_fallback_engines(tmp_path):
+    """Eskiden Google, Ollama DOGRUDAN basarisiz oldugunda (hallucinate
+    degil) kontrolsuz kullanilirdi; artik HER motorun sonucu
+    halusinasyon kontrolunden gecer."""
+    from app.core import cache as cache_mod
+    import os
+
+    long_fake = "Bu çok uzun ve alakasız bir açıklama metni " * 5
+    config = {
+        "translate_engine": "ollama", "source_lang": "auto", "target_lang": "tr",
+        "max_cache_memory_items": 100, "allow_google_fallback": True,
+        "fallback_order": ["ollama", "google"],
+    }
+    manager = translate.TranslationManager(config)
+    manager.cache = cache_mod.TranslationCache(
+        max_memory_items=100, db_path=os.path.join(str(tmp_path), "chain4.sqlite3")
+    )
+
+    with patch.object(translate.OllamaTranslator, "translate", lambda *a, **k: None), \
+         patch.object(translate.GoogleFallbackTranslator, "translate", lambda *a, **k: long_fake):
+        result = manager.translate("Hi")
+
+    assert result is None

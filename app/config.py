@@ -18,10 +18,18 @@ DEFAULT_CONFIG = {
     # icin PaddlePaddle GPU derlemesi resmi olarak uyumlu degil (test edildi, yanlis
     # sonuc verdi) - bu yuzden GPU alternatifi olarak EasyOCR kullaniliyor.
     "ocr_engine": "windows",
-    # Çeviri motoru: "ollama" | "google"
+    # Çeviri motoru: "ollama" | "google" | "argos" (çevrimdışı, isteğe bağlı
+    # kurulum) | "deepl" (bulut, ücretsiz API anahtarı gerekir)
     "translate_engine": "ollama",
     "ollama_model": "aya-expanse:8b",
     "ollama_host": "http://127.0.0.1:11434",
+    # Birincil motor basarisiz/suphesiz çevrilemezse hangi sırayla diger
+    # motorlar denenir (örn. Ollama -> Argos -> Google). Kurulu/yapılandırılmış
+    # olmayan bir motor (örn. Argos kurulu değilse) otomatik atlanır.
+    "fallback_order": ["ollama", "argos", "google"],
+    # DeepL ücretsiz API anahtarı (www.deepl.com/pro-api'den alınır). Boşsa
+    # DeepL motoru hiç kullanılamaz.
+    "deepl_api_key": "",
     # Kaynak dil: "auto" tüm Latin alfabesi dillerini dener, OCR dili olarak kullanılır
     "source_lang": "auto",
     "target_lang": "tr",
@@ -138,6 +146,14 @@ def _validate_config(data):
             if not isinstance(value, str):
                 logger.warning("config.json: '%s' gecersiz (%r), varsayilana donuluyor.", key, value)
                 cleaned[key] = default
+        elif isinstance(default, list):
+            valid = (
+                isinstance(value, list)
+                and all(isinstance(v, str) for v in value)
+            )
+            if not valid:
+                logger.warning("config.json: '%s' gecersiz (%r), varsayilana donuluyor.", key, value)
+                cleaned[key] = list(default)
     return cleaned
 
 

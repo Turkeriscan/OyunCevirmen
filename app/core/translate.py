@@ -166,6 +166,77 @@ class GoogleFallbackTranslator:
             return None
 
 
+class ArgosTranslator:
+    """Cevrimdisi (internetsiz) yedek/alternatif motor: Argos Translate.
+    "İsteğe bağlı kurulum" oldugu icin requirements.txt'e DAHIL EDILMEDI;
+    kurulu degilse is_available() False doner ve bu motor sessizce
+    atlanir (hicbir hata gostermez)."""
+
+    def __init__(self):
+        self._checked = False
+        self._available = False
+
+    def is_available(self):
+        if not self._checked:
+            self._checked = True
+            try:
+                import argostranslate.translate  # noqa: F401
+                self._available = True
+            except Exception:
+                self._available = False
+        return self._available
+
+    def translate(self, text, source_lang="auto", target_lang="tr"):
+        if not self.is_available():
+            return None
+        try:
+            import argostranslate.translate as at
+            src = "en" if source_lang in (None, "auto") else source_lang
+            return at.translate(text, src, target_lang)
+        except Exception as exc:
+            logger.warning("Argos Translate hatasi: %s", exc)
+            return None
+
+
+class DeepLTranslator:
+    """Isteğe bagli bulut motoru: DeepL (ucretsiz API anahtari gerekir,
+    Çeviri sayfasindan girilir). Anahtar bos ise kullanilamaz sayilir -
+    ekstra bir "izin" akisina gerek yok, anahtari girmis olmak zaten
+    acik riza anlamina gelir."""
+
+    def __init__(self, api_key=""):
+        self.api_key = api_key or ""
+        self._session = requests.Session()
+
+    def is_configured(self):
+        return bool(self.api_key.strip())
+
+    def translate(self, text, source_lang="auto", target_lang="tr"):
+        if not self.is_configured():
+            return None
+        try:
+            data = {
+                "auth_key": self.api_key.strip(),
+                "text": text,
+                "target_lang": target_lang.upper(),
+            }
+            if source_lang not in (None, "auto"):
+                data["source_lang"] = source_lang.upper()
+            resp = self._session.post(
+                "https://api-free.deepl.com/v2/translate", data=data, timeout=10,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+            return payload["translations"][0]["text"]
+        except Exception as exc:
+            logger.warning("DeepL ceviri hatasi: %s", exc)
+            return None
+
+
+_KNOWN_ENGINES = ("ollama", "google", "argos", "deepl")
+DEFAULT_FALLBACK_ORDER = ["ollama", "argos", "google"]
+
+
 class TranslationManager:
     """Config'e gore motor secer, onbellek kullanir, basarisizlikta yedek motora gecer."""
 
@@ -177,6 +248,8 @@ class TranslationManager:
             model=config.get("ollama_model", "aya-expanse:8b"),
         )
         self.google = GoogleFallbackTranslator()
+        self.argos = ArgosTranslator()
+        self.deepl = DeepLTranslator(api_key=config.get("deepl_api_key", ""))
         # Orchestrator bunu baglayip, izin "sorulmadi" (None) durumundayken
         # kullanicidan bir kez izin istenmesini saglar (bkz. main.py
         # _request_google_permission). Arayuzsuz/testte None kalabilir.
@@ -207,6 +280,34 @@ class TranslationManager:
             result = glossary_mod.restore_terms(result, matches)
         return result
 
+    def _engine_order(self, engine_pref):
+        """Birincil motoru basa alip, config'teki yedek sirasini (orn.
+        Ollama -> Argos -> Google) tekrarsiz olarak ekler. Boylece
+        kullanici motor olarak ne secerse secsin, calismadiginda/suphe
+        ciktiginda hangi SIRAYLA diger motorlarin denenecegi ayni mantikla
+        belirlenir."""
+        fallback_order = self.config.get("fallback_order") or DEFAULT_FALLBACK_ORDER
+        fallback_order = [e for e in fallback_order if e in _KNOWN_ENGINES]
+        return [engine_pref] + [e for e in fallback_order if e != engine_pref]
+
+    def _engine_translate(self, name, text, source_lang, target_lang, context_lines,
+                           glossary_entries, current_model):
+        """Tek bir motoru dener; o motor kullanilamiyorsa (kurulu degil,
+        anahtar girilmemis vb.) veya basarisiz olursa None doner."""
+        if name == "ollama":
+            glossary_block = glossary_mod.build_ollama_system_block(glossary_entries)
+            return self.ollama.translate(
+                text, source_lang, target_lang, model=current_model,
+                context_lines=context_lines, glossary_block=glossary_block,
+            )
+        if name == "google":
+            return self._translate_via_google(text, source_lang, target_lang, glossary_entries)
+        if name == "argos":
+            return self.argos.translate(text, source_lang, target_lang)
+        if name == "deepl":
+            return self.deepl.translate(text, source_lang, target_lang)
+        return None
+
     def translate(self, text, source_lang=None, target_lang=None, context_lines=None):
         target_lang = target_lang or self.config.get("target_lang", "tr")
         source_lang = source_lang or self.config.get("source_lang", "auto")
@@ -215,6 +316,7 @@ class TranslationManager:
         # ayarini calisirken degistirirse, zaten kurulu olan onbellege de
         # hemen yansisin (bkz. TranslationCache.set_max_memory_items).
         self.cache.set_max_memory_items(self.config.get("max_cache_memory_items", 5000))
+        self.deepl.api_key = self.config.get("deepl_api_key", self.deepl.api_key)
 
         # Onbellek anahtari baglamdan BAGIMSIZ kalir: ayni metin, baglam
         # degisse de ayni anahtarla aranir/kaydedilir (aksi halde ayni
@@ -223,55 +325,39 @@ class TranslationManager:
         if cached is not None:
             return cached
 
-        result = None
-        used_engine = engine_pref
-
         self.ollama.host = self.config.get("ollama_host", self.ollama.host).rstrip("/")
         current_model = self.config.get("ollama_model", self.ollama.model)
 
         # Oyun sozlugu (karakter/yer/esya adlari): Ollama'ya sistem
         # talimatinda dogrudan verilir; Google'a gonderilirken terimler
         # yer tutucuyla korunup sonra sozlukteki hedef terimle geri konur
-        # (bkz. _translate_via_google).
+        # (bkz. _translate_via_google). Argos/DeepL icin sozluk talimati
+        # OKUYAMADIKLARI icin uygulanmaz (ikisi de ayni zamanda nadiren
+        # kullanilan, isteğe bagli motorlardir).
         glossary_entries = glossary_mod.load_glossary()
-        glossary_block = glossary_mod.build_ollama_system_block(glossary_entries)
 
-        if engine_pref == "ollama":
-            result = self.ollama.translate(
-                text, source_lang, target_lang, model=current_model,
-                context_lines=context_lines, glossary_block=glossary_block,
+        result = None
+        used_engine = None
+        order = self._engine_order(engine_pref)
+        for position, name in enumerate(order):
+            if name == "google" and position > 0 and not self._google_fallback_allowed():
+                # Google SADECE yedek pozisyonundaysa izin gerekir; birincil
+                # motor olarak bilerek secilmisse (position == 0) zaten acik riza vardir.
+                logger.info("Google yedek olarak denenecekti ama izin yok: %r", text[:40])
+                continue
+            candidate = self._engine_translate(
+                name, text, source_lang, target_lang, context_lines, glossary_entries, current_model,
             )
-            if result and _looks_like_hallucination(text, result):
-                if self._google_fallback_allowed():
-                    logger.warning(
-                        "Ollama supheli/alakasiz ceviri uretti, Google'a geciliyor. "
-                        "Kaynak=%r Model_ciktisi=%r", text[:60], result[:80],
-                    )
-                    result = self._translate_via_google(text, source_lang, target_lang, glossary_entries)
-                    used_engine = "google"
-                    if result and _looks_like_hallucination(text, result):
-                        result = None  # Google de supheliyse, hicbir sey gosterme
-                else:
-                    logger.info("Ollama supheli ceviri uretti, Google izni yok: %r", text[:40])
-                    result = None
-            elif not result:
-                if self._google_fallback_allowed():
-                    logger.info("Ollama basarisiz, Google'a geciliyor: %r", text[:40])
-                    result = self._translate_via_google(text, source_lang, target_lang, glossary_entries)
-                    used_engine = "google"
-                else:
-                    logger.info("Ollama basarisiz, Google izni yok, cevrilemedi: %r", text[:40])
-        else:
-            result = self._translate_via_google(text, source_lang, target_lang, glossary_entries)
-            used_engine = "google"
-            if not result:
-                result = self.ollama.translate(
-                    text, source_lang, target_lang, model=current_model,
-                    context_lines=context_lines, glossary_block=glossary_block,
+            if candidate and _looks_like_hallucination(text, candidate):
+                logger.warning(
+                    "%s supheli/alakasiz ceviri uretti, atlaniyor. Kaynak=%r Cikti=%r",
+                    name, text[:60], candidate[:80],
                 )
-                used_engine = "ollama"
-                if result and _looks_like_hallucination(text, result):
-                    result = None
+                candidate = None
+            if candidate:
+                result = candidate
+                used_engine = name
+                break
 
         if result:
             # ONEMLI: onbellek anahtari HER ZAMAN kullanicinin SECTIGI motor

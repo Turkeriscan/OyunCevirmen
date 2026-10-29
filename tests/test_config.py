@@ -154,3 +154,27 @@ def test_save_and_reload_roundtrip(isolated_config):
     reloaded = config_mod.load_config()
     assert reloaded["font_size"] == 24
     assert reloaded["ocr_engine"] == "easyocr"
+
+
+def test_fallback_order_accepts_list_of_strings(isolated_config):
+    isolated_config.write_text(json.dumps({"fallback_order": ["ollama", "google"]}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["fallback_order"] == ["ollama", "google"]
+
+
+def test_fallback_order_rejects_non_list(isolated_config):
+    isolated_config.write_text(json.dumps({"fallback_order": "ollama,google"}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["fallback_order"] == config_mod.DEFAULT_CONFIG["fallback_order"]
+
+
+def test_fallback_order_rejects_non_string_items(isolated_config):
+    isolated_config.write_text(json.dumps({"fallback_order": ["ollama", 42]}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["fallback_order"] == config_mod.DEFAULT_CONFIG["fallback_order"]
+
+
+def test_deepl_api_key_accepts_string(isolated_config):
+    isolated_config.write_text(json.dumps({"deepl_api_key": "abc123"}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["deepl_api_key"] == "abc123"

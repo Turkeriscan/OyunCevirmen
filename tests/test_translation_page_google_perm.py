@@ -106,3 +106,24 @@ def test_changing_perm_during_load_is_ignored(qapp):
     page.combo_google_perm.setCurrentIndex(i)
 
     assert ctx.config["allow_google_fallback"] is None  # degismedi
+
+
+def test_deepl_key_loads_and_saves(qapp):
+    ctx = _FakeCtx(allow_google_fallback=None)
+    ctx.config["deepl_api_key"] = "my-secret-key"
+    page = TranslationPage(ctx)
+    page.load(ctx.config)
+    assert page.edit_deepl_key.text() == "my-secret-key"
+
+    page.edit_deepl_key.setText("new-key")
+    cfg = dict(ctx.config)
+    page.save(cfg)
+    assert cfg["deepl_api_key"] == "new-key"
+
+
+def test_translate_engine_combo_includes_argos_and_deepl(qapp):
+    ctx = _FakeCtx()
+    page = TranslationPage(ctx)
+    values = [page.combo_translate.itemData(i) for i in range(page.combo_translate.count())]
+    assert "argos" in values
+    assert "deepl" in values
