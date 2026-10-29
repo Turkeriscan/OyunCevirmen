@@ -309,6 +309,8 @@ class Orchestrator:
         self.hotkeys = hotkeys_mod.HotkeyManager(
             config, self.toggle_instant, self.toggle_live, self.request_quit,
             on_region_select=self.request_open_region_selector,
+            on_reveal_press=self.overlay.temporarily_hide_threadsafe,
+            on_reveal_release=self.overlay.restore_after_reveal_threadsafe,
         )
         self.tray = tray_mod.TrayApp(
             config,

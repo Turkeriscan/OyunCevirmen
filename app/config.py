@@ -46,6 +46,9 @@ DEFAULT_CONFIG = {
     "hotkey_live_toggle": "f10",
     "hotkey_quit": "f11",
     "hotkey_region_select": "f8",
+    # Basili TUTULDUKCA ceviri kutularini gizler (orijinal yaziyi gormek icin);
+    # birakinca geri gelir.
+    "hotkey_hold_reveal": "f6",
     # Canlı mod tarama sıklığı (saniye)
     "live_scan_interval": 0.45,
     # Canlı modda ekranın kaç sütun/satıra bölüneceği (değişen bölge tespiti için)

@@ -6,6 +6,10 @@ ACTIONS = [
     ("hotkey_instant", "Anında tara", "Ekranı bir kez çevir; tekrar basınca çeviriler kalkar.", "f9"),
     ("hotkey_live_toggle", "Canlı mod", "Ekranı sürekli izlemeyi başlat veya durdur.", "f10"),
     ("hotkey_quit", "Programı kapat", "Oyun Çevirmen'i tamamen kapatır.", "f11"),
+    ("hotkey_region_select", "Bölge çiz", "Dışında bırakılacak/sadece okunacak bölgeleri çizmek "
+     "için seçim ekranını açar.", "f8"),
+    ("hotkey_hold_reveal", "Orijinali göster", "Basılı TUTULDUKÇA çeviri kutularını gizler; "
+     "orijinal yazıyı görmek için kullan.", "f6"),
 ]
 
 

@@ -315,6 +315,20 @@ class OverlayWindow(QtWidgets.QWidget):
         self._anim.stop()
         self.update()
 
+    def temporarily_hide(self):
+        """Tutma-ile-goster kisayolu (4.2) basili tutulurken: kutulari
+        SILMEDEN aninda gizler - fade-out YOK, cunku kullanici orijinal
+        yaziyi HEMEN gormek ister. restore_after_reveal() ile geri gelir."""
+        self._anim.stop()
+        self.hide()
+
+    def restore_after_reveal(self):
+        """temporarily_hide()'in simetrigi: tus birakilinca, SAKLANAN ayni
+        kutular (yeniden tarama yapmadan) aninda geri gosterilir."""
+        if self._boxes:
+            self.show()
+            self.update()
+
     def fade_out_and_hide(self):
         if not self.isVisible() or not self._boxes or _reduced_motion():
             self.clear_boxes()
@@ -371,12 +385,22 @@ class OverlayController:
         self._bridge = _OverlayBridge()
         self._bridge.show_boxes_signal.connect(self._on_show_boxes)
         self._bridge.hide_signal.connect(self._on_hide)
+        self._bridge.temp_hide_signal.connect(self._on_temp_hide)
+        self._bridge.restore_signal.connect(self._on_restore)
 
     def show_boxes_threadsafe(self, boxes):
         self._bridge.show_boxes_signal.emit(boxes)
 
     def hide_threadsafe(self):
         self._bridge.hide_signal.emit()
+
+    def temporarily_hide_threadsafe(self):
+        """Tutma-ile-goster kisayolu (4.2) basili tutulurken cagirilir -
+        kisayol kancasi ayri bir thread'de calisir."""
+        self._bridge.temp_hide_signal.emit()
+
+    def restore_after_reveal_threadsafe(self):
+        self._bridge.restore_signal.emit()
 
     def refresh(self):
         """Gorunum ayarlari degisince ekrandaki cevirileri yeniden ciz."""
@@ -390,7 +414,15 @@ class OverlayController:
     def _on_hide(self):
         self.window.fade_out_and_hide()
 
+    def _on_temp_hide(self):
+        self.window.temporarily_hide()
+
+    def _on_restore(self):
+        self.window.restore_after_reveal()
+
 
 class _OverlayBridge(QtCore.QObject):
     show_boxes_signal = QtCore.pyqtSignal(list)
     hide_signal = QtCore.pyqtSignal()
+    temp_hide_signal = QtCore.pyqtSignal()
+    restore_signal = QtCore.pyqtSignal()

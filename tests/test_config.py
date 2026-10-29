@@ -110,6 +110,10 @@ def test_hotkey_region_select_default():
     assert config_mod.DEFAULT_CONFIG["hotkey_region_select"] == "f8"
 
 
+def test_hotkey_hold_reveal_default():
+    assert config_mod.DEFAULT_CONFIG["hotkey_hold_reveal"] == "f6"
+
+
 def test_exclude_regions_default_is_empty_list():
     assert config_mod.DEFAULT_CONFIG["exclude_regions"] == []
     assert config_mod.DEFAULT_CONFIG["include_regions"] == []
