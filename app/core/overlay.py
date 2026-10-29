@@ -2,10 +2,13 @@
 Overlay modulu: PyQt6 ile seffaf, her zaman ustte, tiklamalari gecirten
 (click-through) bir pencere. Her ceviri, orijinal yazinin tam ustune cizilir.
 
-Uc gorunum stili vardir (config "overlay_style"):
-    box       Kutu     - yari saydam yuvarlak koseli kutu (varsayilan)
-    subtitle  Altyazi  - kutu yok; sinema altyazisi gibi kenar cizgili, golgeli yazi
-    band      Serit    - kenardan kenara koyu serit, solda ince vurgu cizgisi
+Dort gorunum stili vardir (config "overlay_style"):
+    box          Kutu         - yari saydam yuvarlak koseli kutu (varsayilan)
+    subtitle     Altyazi      - kutu yok; sinema altyazisi gibi kenar cizgili, golgeli yazi
+    band         Serit        - kenardan kenara koyu serit, solda ince vurgu cizgisi
+    bottom_strip Altyazi seridi - orijinal yazinin USTUNE DEGIL, tum ceviriler
+                 ekranin EN ALTINDA birlesik tek bir altyazi seridinde gosterilir
+                 (bkz. OverlayWindow._paint_bottom_strip)
 
 Cizim mantigi paint_translation() fonksiyonundadir; kontrol panelindeki
 onizleme de ayni fonksiyonu kullanir, boylece onizleme oyundakiyle birebir ayni.
@@ -41,7 +44,8 @@ WS_EX_NOACTIVATE = 0x08000000
 FADE_IN = 0.16   # saniye
 FADE_OUT = 0.12
 
-OVERLAY_STYLES = ("box", "subtitle", "band")
+OVERLAY_STYLES = ("box", "subtitle", "band", "bottom_strip")
+BOTTOM_STRIP_SEPARATOR = "   /   "
 # config "overlay_font" -> tema yazi rolu
 OVERLAY_FONTS = {
     "plex": "body_semibold",      # IBM Plex Sans (programla gelir)
@@ -147,7 +151,12 @@ def paint_translation(p, rect, text, cfg, alpha=1.0):
         p.setPen(fg)
         p.drawText(inner, flags, text)
 
-    elif style == "subtitle":
+    elif style in ("subtitle", "bottom_strip"):
+        # "bottom_strip" (alt serit) modunda bu fonksiyon HER ZAMAN tek,
+        # ONCEDEN birlestirilmis bir metinle ve ozel olarak hesaplanmis
+        # (ekranin altina sabitlenmis) bir rect ile cagirilir (bkz.
+        # OverlayWindow._paint_bottom_strip) - glif cizimi "subtitle" ile
+        # AYNIDIR, sadece KONUM farklidir.
         # Sinema altyazisi: kutu yok, kalin kenar + yumusak golge
         inner = r.adjusted(-6, -2, 6, 2)
         f = _fit_font(cfg, inner, text, flags)
@@ -232,6 +241,25 @@ def _wrap_lines(text, font, width):
     if current:
         lines.append(current)
     return lines or [text]
+
+
+def build_bottom_strip_text(boxes):
+    """"Altyazi seridi" modu icin: ekrandaki TUM kutularin metnini, YUKARIDAN
+    ASAGIYA dogal okuma sirasiyla, tek bir satirda birlestirir."""
+    ordered = sorted(boxes, key=lambda b: (b.rect.y(), b.rect.x()))
+    texts = [b.text for b in ordered if b.text]
+    return BOTTOM_STRIP_SEPARATOR.join(texts)
+
+
+def compute_bottom_strip_rect(screen_rect):
+    """"Altyazi seridi" modunun (ekranin) hangi dikdortgenine cizilecegini
+    hesaplar - genis, ekranin alt-ortasina yakin, kenarlardan biraz pay birakir."""
+    margin_x = max(20, int(screen_rect.width() * 0.10))
+    width = max(1, screen_rect.width() - margin_x * 2)
+    height = max(40, int(screen_rect.height() * 0.12))
+    bottom_margin = max(10, int(screen_rect.height() * 0.05))
+    top = screen_rect.bottom() - bottom_margin - height
+    return QtCore.QRect(screen_rect.left() + margin_x, top, width, height)
 
 
 def _hex_to_rgb(hex_color):
@@ -358,6 +386,11 @@ class OverlayWindow(QtWidgets.QWidget):
         if self._fading_out is not None:
             out = max(0.0, 1.0 - (now - self._fading_out) / FADE_OUT)
 
+        if self.config.get("overlay_style") == "bottom_strip":
+            self._paint_bottom_strip(painter, now, out)
+            painter.end()
+            return
+
         # Pencere sanal masaustunun sol-ust kosesinden baslayabilir (negatif koordinatlar),
         # kutular ekran (global) koordinatinda geldigi icin pencere origin'ine gore kaydiriyoruz.
         origin = self.geometry().topLeft()
@@ -369,6 +402,19 @@ class OverlayWindow(QtWidgets.QWidget):
             a = 1 - (1 - a) ** 3  # yumusak yavaslama
             paint_translation(painter, rect, box.text, self.config, alpha=a * out)
         painter.end()
+
+    def _paint_bottom_strip(self, painter, now, out):
+        """"Altyazi seridi" modu: hepsini orijinal konumunda degil, TEK bir
+        alt-ekran seridinde birlesik gosterir - gercek film altyazisi gibi."""
+        text = build_bottom_strip_text(self._boxes)
+        if not text:
+            return
+        rect = compute_bottom_strip_rect(self.rect())
+        born_times = list(self._born.values())
+        t = min(born_times) if born_times else 0.0
+        a = 1.0 if t == 0.0 else min(1.0, (now - t) / FADE_IN)
+        a = 1 - (1 - a) ** 3
+        paint_translation(painter, rect, text, self.config, alpha=a * out)
 
 
 class OverlayController:

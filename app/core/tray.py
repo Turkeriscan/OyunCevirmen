@@ -39,7 +39,7 @@ def _ensure_icon():
 
 class TrayApp:
     def __init__(self, config, status_provider, on_toggle_live, on_instant, on_quit,
-                 on_open_window=None, on_toggle_mini=None):
+                 on_open_window=None, on_toggle_mini=None, on_toggle_big_subtitle=None):
         """
         status_provider: () -> dict(ocr_engine, translate_engine, live_active)
         on_toggle_live, on_instant, on_quit, on_open_window: callback'ler (parametresiz)
@@ -51,6 +51,7 @@ class TrayApp:
         self.on_quit = on_quit
         self.on_open_window = on_open_window
         self.on_toggle_mini = on_toggle_mini
+        self.on_toggle_big_subtitle = on_toggle_big_subtitle
         self._icon = None
         self._thread = None
 
@@ -88,6 +89,15 @@ class TrayApp:
         if self.on_toggle_mini:
             self.on_toggle_mini()
 
+    def _big_subtitle_label(self, item):
+        st = self.status_provider()
+        return "Büyük altyazıyı gizle" if st.get("big_subtitle_visible") else \
+            "Büyük altyazı penceresini göster (2. monitor)"
+
+    def _toggle_big_subtitle(self, icon=None, item=None):
+        if self.on_toggle_big_subtitle:
+            self.on_toggle_big_subtitle()
+
     def _build_menu(self):
         return pystray.Menu(
             pystray.MenuItem(self._status_label, None, enabled=False),
@@ -96,6 +106,7 @@ class TrayApp:
                 "Kontrol panelini aç", self._open_window, default=True
             ),
             pystray.MenuItem(self._mini_label, self._toggle_mini),
+            pystray.MenuItem(self._big_subtitle_label, self._toggle_big_subtitle),
             pystray.MenuItem(self._instant_label, lambda icon, item: self.on_instant()),
             pystray.MenuItem(self._live_label, lambda icon, item: self.on_toggle_live()),
             pystray.Menu.SEPARATOR,

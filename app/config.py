@@ -108,6 +108,11 @@ DEFAULT_CONFIG = {
     "mini_panel_enabled": False,
     "mini_panel_pos": None,
     "window_geometry": None,
+    # Buyuk altyazi penceresi (4.3): exclusive fullscreen oyunlarda normal
+    # overlay oyunun ustune cikamadigi icin, ikinci bir monitorde buyuk/
+    # okunakli bir pencerede ceviri gosterilebilir.
+    "big_subtitle_enabled": False,
+    "big_subtitle_pos": None,
     # Log seviyesi
     "log_level": "INFO",
     # Kullanicinin elle cizdigi bolgeler (3.5), masaustu MUTLAK piksel
@@ -128,6 +133,7 @@ DEFAULT_CONFIG = {
 # yerlerde zaten savunmaci kontrol var (orn. _restore_geometry, MiniPanel.place).
 _NULLABLE_KEYS = {
     "allow_google_fallback", "mini_panel_pos", "window_geometry", "capture_monitor_identity",
+    "big_subtitle_pos",
 }
 _MONITOR_IDENTITY_KEYS = ("left", "top", "width", "height")
 _REGION_LIST_KEYS = {"exclude_regions", "include_regions"}

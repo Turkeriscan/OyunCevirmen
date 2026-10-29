@@ -114,6 +114,22 @@ def test_hotkey_hold_reveal_default():
     assert config_mod.DEFAULT_CONFIG["hotkey_hold_reveal"] == "f6"
 
 
+def test_big_subtitle_enabled_default_is_false():
+    assert config_mod.DEFAULT_CONFIG["big_subtitle_enabled"] is False
+
+
+def test_big_subtitle_pos_default_is_none():
+    assert config_mod.DEFAULT_CONFIG["big_subtitle_pos"] is None
+
+
+def test_big_subtitle_pos_accepts_any_value(isolated_config):
+    """mini_panel_pos ile ayni muameleyi gorur: turu zorlanmaz, kullanim
+    yerinde (BigSubtitlePanel.place) savunmaci kontrol vardir."""
+    isolated_config.write_text(json.dumps({"big_subtitle_pos": [10, 20]}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["big_subtitle_pos"] == [10, 20]
+
+
 def test_exclude_regions_default_is_empty_list():
     assert config_mod.DEFAULT_CONFIG["exclude_regions"] == []
     assert config_mod.DEFAULT_CONFIG["include_regions"] == []

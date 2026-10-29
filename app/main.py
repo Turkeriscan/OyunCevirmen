@@ -39,6 +39,7 @@ from app.core import tray as tray_mod
 from app.core import textfilter
 from app.ui import mainwindow as mainwindow_mod
 from app.ui import theme as ui_theme
+from app.ui.bigsubtitle import BigSubtitleController
 from app.ui.minipanel import MiniPanelController
 from app import config as config_mod
 
@@ -207,6 +208,7 @@ class AppBridge(QtCore.QObject):
     toggle_mini_signal = QtCore.pyqtSignal()
     ask_google_permission_signal = QtCore.pyqtSignal()
     open_region_selector_signal = QtCore.pyqtSignal()
+    toggle_big_subtitle_signal = QtCore.pyqtSignal()
 
 
 INFLIGHT_WAIT_TIMEOUT = 15.0  # bir baskasinin cevirisini bekleme ust siniri (sn)
@@ -296,7 +298,9 @@ class Orchestrator:
         self.bridge.toggle_mini_signal.connect(self._toggle_mini_on_gui_thread)
         self.bridge.ask_google_permission_signal.connect(self._ask_google_permission_on_gui_thread)
         self.bridge.open_region_selector_signal.connect(self._open_region_selector_on_gui_thread)
+        self.bridge.toggle_big_subtitle_signal.connect(self._toggle_big_subtitle_on_gui_thread)
         self.mini_panel = MiniPanelController(config, self)
+        self.big_subtitle = BigSubtitleController(config, self)
         self._region_selector = None  # acikken referansi canli tutar
 
         # ---- oyun bazli profiller (4.1, bkz. _sync_active_profile) ----
@@ -320,6 +324,7 @@ class Orchestrator:
             on_quit=self.request_quit,
             on_open_window=self.request_show_window,
             on_toggle_mini=self.toggle_mini_panel,
+            on_toggle_big_subtitle=self.toggle_big_subtitle,
         )
 
     def _status(self):
@@ -328,6 +333,7 @@ class Orchestrator:
             "translate_engine": self.config.get("translate_engine"),
             "live_active": self.mode == self.MODE_LIVE,
             "mini_visible": self.mini_panel.is_visible(),
+            "big_subtitle_visible": self.big_subtitle.is_visible(),
         }
 
     def start(self):
@@ -335,6 +341,8 @@ class Orchestrator:
         self.tray.start()
         if self.config.get("mini_panel_enabled"):
             self.mini_panel.show()
+        if self.config.get("big_subtitle_enabled"):
+            self.big_subtitle.show()
         self._profile_poll_thread = threading.Thread(target=self._profile_poll_loop, daemon=True)
         self._profile_poll_thread.start()
         logger.info("Orkestrasyon basladi. F9=Anlik F10=Canli F11=Cikis")
@@ -948,6 +956,11 @@ class Orchestrator:
                 self.mini_panel.panel.hide()
         except Exception:
             pass
+        try:
+            if self.big_subtitle.panel is not None:
+                self.big_subtitle.panel.hide()
+        except Exception:
+            pass
         if self.main_window is not None:
             try:
                 self.main_window.apply_now()
@@ -964,6 +977,18 @@ class Orchestrator:
 
     def _toggle_mini_on_gui_thread(self):
         self.mini_panel.toggle()
+        try:
+            self.tray.update_menu()
+        except Exception:
+            pass
+
+    # ------------------------------------------------- buyuk altyazi (4.3)
+    def toggle_big_subtitle(self):
+        """Herhangi bir thread'den cagrilabilir (tepsi menusu ayri thread'de)."""
+        self.bridge.toggle_big_subtitle_signal.emit()
+
+    def _toggle_big_subtitle_on_gui_thread(self):
+        self.big_subtitle.toggle()
         try:
             self.tray.update_menu()
         except Exception:

@@ -128,6 +128,12 @@ class MainWindow(FramelessWindow):
         self.btn_mini.clicked.connect(self._toggle_mini)
         tb.extra.addWidget(self.btn_mini)
 
+        self.btn_big_subtitle = IconButton(
+            "monitor", "Büyük altyazı penceresi (2. monitor, tam ekran oyunlar için)", 17,
+            checkable=True)
+        self.btn_big_subtitle.clicked.connect(self._toggle_big_subtitle)
+        tb.extra.addWidget(self.btn_big_subtitle)
+
         for key, title in (("engine", "Çeviri"), ("ocr", "Okuma"), ("gpu", "Ekran kartı"), ("cache", "Hafıza")):
             self.credits.add_item(key, title)
 
@@ -363,6 +369,8 @@ class MainWindow(FramelessWindow):
         tb.state.setToolTip(f"{hotkey_text(hk_i)}: anında tara    {hotkey_text(hk_l)}: canlı mod")
         mini = getattr(o, "mini_panel", None)
         self.btn_mini.setChecked(bool(mini and mini.is_visible()))
+        big_subtitle = getattr(o, "big_subtitle", None)
+        self.btn_big_subtitle.setChecked(bool(big_subtitle and big_subtitle.is_visible()))
         if self.stack.currentIndex() == 0:
             self.scene.refresh(mode, hk_i, hk_l)
 
@@ -443,6 +451,13 @@ class MainWindow(FramelessWindow):
         o = self.orchestrator
         if hasattr(o, "toggle_mini_panel"):
             o.toggle_mini_panel()
+        QtCore.QTimer.singleShot(50, self._refresh_fast)
+
+    # ================================================= buyuk altyazi (4.3)
+    def _toggle_big_subtitle(self):
+        o = self.orchestrator
+        if hasattr(o, "toggle_big_subtitle"):
+            o.toggle_big_subtitle()
         QtCore.QTimer.singleShot(50, self._refresh_fast)
 
     # ====================================================== pencere

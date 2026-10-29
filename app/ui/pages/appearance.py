@@ -18,6 +18,8 @@ STYLES = [
     ("box", "Kutu", "Yarı saydam kutu; her oyunda okunur."),
     ("subtitle", "Altyazı", "Kutu yok; film altyazısı gibi kenarlı yazı."),
     ("band", "Şerit", "Kenardan kenara koyu şerit, solda ince çizgi."),
+    ("bottom_strip", "Altyazı şeridi", "Orijinal yazının üzerine değil; tüm "
+     "çeviriler ekranın en altında birleşik tek bir şeritte gösterilir."),
 ]
 FONTS = [
     ("plex", "IBM Plex Sans", "Programla gelir; küçük boyutta bile net."),
