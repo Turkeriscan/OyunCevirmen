@@ -122,6 +122,16 @@ def test_big_subtitle_pos_default_is_none():
     assert config_mod.DEFAULT_CONFIG["big_subtitle_pos"] is None
 
 
+def test_last_update_check_at_default_is_none():
+    assert config_mod.DEFAULT_CONFIG["last_update_check_at"] is None
+
+
+def test_last_update_check_at_accepts_timestamp(isolated_config):
+    isolated_config.write_text(json.dumps({"last_update_check_at": 1700000000.0}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["last_update_check_at"] == 1700000000.0
+
+
 def test_big_subtitle_pos_accepts_any_value(isolated_config):
     """mini_panel_pos ile ayni muameleyi gorur: turu zorlanmaz, kullanim
     yerinde (BigSubtitlePanel.place) savunmaci kontrol vardir."""

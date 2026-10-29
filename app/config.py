@@ -127,13 +127,15 @@ DEFAULT_CONFIG = {
     # {"oyun.exe": {"ocr_engine":..., "source_lang":..., "overlay_style":...,
     #               "exclude_regions":[...], "include_regions":[...], "glossary":[...]}}
     "game_profiles": {},
+    # Surum kontrolu (5.2): GitHub Releases'e EN FAZLA gunde bir kez bakilir.
+    "last_update_check_at": None,
 }
 
 # Degeri None/esnek kalabilen anahtarlar: turu zorlanmaz, kullanildiklari
 # yerlerde zaten savunmaci kontrol var (orn. _restore_geometry, MiniPanel.place).
 _NULLABLE_KEYS = {
     "allow_google_fallback", "mini_panel_pos", "window_geometry", "capture_monitor_identity",
-    "big_subtitle_pos",
+    "big_subtitle_pos", "last_update_check_at",
 }
 _MONITOR_IDENTITY_KEYS = ("left", "top", "width", "height")
 _REGION_LIST_KEYS = {"exclude_regions", "include_regions"}

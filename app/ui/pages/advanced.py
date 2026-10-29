@@ -4,6 +4,7 @@ import threading
 
 from PyQt6 import QtCore, QtWidgets
 
+from app import __version__ as APP_VERSION
 from app import config as config_mod
 from app.core import capture as capture_mod
 from app.core import diagnostics as diagnostics_mod
@@ -149,6 +150,9 @@ class AdvancedPage(Page):
         g6.row("Sorun bildirimi için paket oluştur", "Son günlükler, ayarların (API anahtarları "
                "gizlenmiş) ve sistem bilgisinin (Windows sürümü, ekran kartı, ekran düzeni) "
                "yer aldığı bir .zip dosyası Masaüstüne kaydedilir.", diag)
+        self.lbl_version = label(f"Oyun Çevirmen v{APP_VERSION}", "RowHint")
+        g6.row("Sürüm", "Üst kısımdaki durum çubuğunda yeni bir sürüm çıktığında bildirim görürsün.",
+               self.lbl_version)
         self.body.addWidget(g6)
 
         self.body.addSpacing(px(10))

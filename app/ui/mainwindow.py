@@ -16,6 +16,7 @@ import time
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+import app as app_version
 from app import config as config_mod
 from app.ui import icons
 from app.ui import theme as T
@@ -134,8 +135,13 @@ class MainWindow(FramelessWindow):
         self.btn_big_subtitle.clicked.connect(self._toggle_big_subtitle)
         tb.extra.addWidget(self.btn_big_subtitle)
 
-        for key, title in (("engine", "Çeviri"), ("ocr", "Okuma"), ("gpu", "Ekran kartı"), ("cache", "Hafıza")):
+        for key, title in (("engine", "Çeviri"), ("ocr", "Okuma"), ("gpu", "Ekran kartı"), ("cache", "Hafıza"),
+                           ("update", "Sürüm")):
             self.credits.add_item(key, title)
+        self.credits.set_item("update", f"v{app_version.__version__}", "off", "")
+        available = getattr(self.orchestrator, "available_update", None)
+        if available:
+            self.show_update_available(available["tag_name"], available["html_url"])
 
         body = QtWidgets.QVBoxLayout(self.body)
         body.setContentsMargins(0, 0, 0, 0)
@@ -459,6 +465,12 @@ class MainWindow(FramelessWindow):
         if hasattr(o, "toggle_big_subtitle"):
             o.toggle_big_subtitle()
         QtCore.QTimer.singleShot(50, self._refresh_fast)
+
+    # ======================================================= surum (5.2)
+    def show_update_available(self, tag_name, html_url):
+        self.credits.set_item(
+            "update", f"Yeni sürüm: {tag_name}", "sub",
+            f"GitHub'dan indirebilirsin: {html_url}" if html_url else "Yeni bir sürüm yayınlandı.")
 
     # ====================================================== pencere
     def _restore_geometry(self):

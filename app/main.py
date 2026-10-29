@@ -31,6 +31,7 @@ from app.core import capture as capture_mod
 from app.core import glossary as glossary_mod
 from app.core import profiles as profiles_mod
 from app.core import regions as regions_mod
+from app.core import update as update_mod
 from app.core import ocr as ocr_mod
 from app.core import translate as translate_mod
 from app.core import overlay as overlay_mod
@@ -41,6 +42,7 @@ from app.ui import mainwindow as mainwindow_mod
 from app.ui import theme as ui_theme
 from app.ui.bigsubtitle import BigSubtitleController
 from app.ui.minipanel import MiniPanelController
+from app import __version__ as APP_VERSION
 from app import config as config_mod
 
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -209,6 +211,7 @@ class AppBridge(QtCore.QObject):
     ask_google_permission_signal = QtCore.pyqtSignal()
     open_region_selector_signal = QtCore.pyqtSignal()
     toggle_big_subtitle_signal = QtCore.pyqtSignal()
+    update_available_signal = QtCore.pyqtSignal(str, str)
 
 
 INFLIGHT_WAIT_TIMEOUT = 15.0  # bir baskasinin cevirisini bekleme ust siniri (sn)
@@ -299,6 +302,8 @@ class Orchestrator:
         self.bridge.ask_google_permission_signal.connect(self._ask_google_permission_on_gui_thread)
         self.bridge.open_region_selector_signal.connect(self._open_region_selector_on_gui_thread)
         self.bridge.toggle_big_subtitle_signal.connect(self._toggle_big_subtitle_on_gui_thread)
+        self.bridge.update_available_signal.connect(self._on_update_available_on_gui_thread)
+        self.available_update = None  # {"tag_name","html_url"} ya da None
         self.mini_panel = MiniPanelController(config, self)
         self.big_subtitle = BigSubtitleController(config, self)
         self._region_selector = None  # acikken referansi canli tutar
@@ -345,6 +350,7 @@ class Orchestrator:
             self.big_subtitle.show()
         self._profile_poll_thread = threading.Thread(target=self._profile_poll_loop, daemon=True)
         self._profile_poll_thread.start()
+        threading.Thread(target=self._check_for_update, daemon=True).start()
         logger.info("Orkestrasyon basladi. F9=Anlik F10=Canli F11=Cikis")
 
     # ---------------------------------------------------------------- F9
@@ -1109,6 +1115,33 @@ class Orchestrator:
         self.config["game_profiles_enabled"] = bool(enabled)
         config_mod.save_config(self.config)
         self._sync_active_profile(self._current_foreground_exe)
+
+    # --------------------------------------------------------- surum kontrolu (5.2)
+    def _check_for_update(self):
+        """Programin ACILISINDA bir kez (daemon thread, GUI'yi bloklamaz)
+        cagrilir. GitHub Releases'e EN FAZLA gunde bir kez bakar (bkz.
+        update_mod.should_check_now) - her acilista internete gitmez."""
+        try:
+            release, new_checked_at = update_mod.check_for_update(
+                APP_VERSION, self.config.get("last_update_check_at"), time.time())
+            if new_checked_at != self.config.get("last_update_check_at"):
+                self.config["last_update_check_at"] = new_checked_at
+                config_mod.save_config(self.config)
+            if release:
+                logger.info("Yeni surum bulundu: %s", release["tag_name"])
+                self.available_update = release
+                self.bridge.update_available_signal.emit(release["tag_name"], release["html_url"])
+                try:
+                    self.tray.notify(
+                        f"Yeni surum mevcut: {release['tag_name']}", title="Oyun Çevirmen")
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.error("Surum kontrolu hata verdi: %s", exc)
+
+    def _on_update_available_on_gui_thread(self, tag_name, html_url):
+        if self.main_window is not None:
+            self.main_window.show_update_available(tag_name, html_url)
 
     # ------------------------------------------------- Google Translate izni
     def _request_google_permission(self):
