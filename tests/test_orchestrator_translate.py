@@ -114,6 +114,34 @@ def test_translate_one_recovers_after_success():
     assert fake._translate_consecutive_failures == 0
 
 
+# ------------------------------------------------------------------ hafiza
+def test_remember_moves_repeated_line_to_front_without_duplicating():
+    """Canli modda ayni cumle tekrar tekrar gelir (ekran degismediginde
+    yeniden okunup yeniden hatirlanabilir); akista/baglamda ayni satirin
+    İKİ KEZ gorunmemesi, sadece en uste tasinmasi gerekir."""
+    fake = _FakeOrchestrator(translate_fn=lambda *a, **k: "ok")
+    fake._remember("Hello", "Merhaba")
+    fake._remember("Bye", "Güle güle")
+    fake._remember("Hello", "Merhaba")  # tekrar geldi
+    assert len(fake.recent) == 2
+    assert fake.recent[0] == (fake.recent[0][0], "Hello", "Merhaba")
+    assert fake.recent[1][1] == "Bye"
+
+
+def test_remember_increments_version_on_every_call():
+    fake = _FakeOrchestrator(translate_fn=lambda *a, **k: "ok")
+    fake._remember("A", "a")
+    fake._remember("A", "a")
+    assert fake.recent_version == 2
+
+
+def test_remember_respects_deque_maxlen():
+    fake = _FakeOrchestrator(translate_fn=lambda *a, **k: "ok")
+    for i in range(50):
+        fake._remember(f"orig{i}", f"ceviri{i}")
+    assert len(fake.recent) == 40
+
+
 # ------------------------------------------------------------------ baglam
 def test_context_lines_returns_recent_pairs_most_recent_first():
     fake = _FakeOrchestrator(translate_fn=lambda *a, **k: "ok")
