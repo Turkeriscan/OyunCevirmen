@@ -19,8 +19,10 @@
 #>
 param(
     # Belirli bir surumu (git etiketi veya dali, orn. "v1.2.0") kurmak
-    # icin bu satiri "v1.2.0" gibi doldurun. BOS birakilirsa (varsayilan)
-    # en guncel "main" dali kurulur/guncellenir - mevcut davranis budur.
+    # icin bu satiri "v1.2.0" gibi doldurun. BOS birakilirsa (varsayilan),
+    # betik GitHub'da YAYINLANMIS EN SON surumu (release) otomatik bulup
+    # onu kurar; GitHub'a ulasilamazsa (internet yok, henuz hic surum
+    # yayinlanmamis vb.) sessizce "main" dalina doner - eski davranis budur.
     [string]$Surum = ""
 )
 
@@ -166,6 +168,25 @@ if (Test-Command "ollama") {
     } else {
         Write-Warn2 "Ollama otomatik bulunamadi, devam ediliyor (program acilista tekrar dener)."
         $Report["Ollama"] = "kurulamadi - elle kontrol edin"
+    }
+}
+
+# ----------------------------------------------------------------- 4.5) surum tespiti
+if (-not $Surum) {
+    Write-Step "GitHub'daki en son surum tespit ediliyor"
+    try {
+        $release = Invoke-RestMethod `
+            -Uri "https://api.github.com/repos/Turkeriscan/OyunCevirmen/releases/latest" `
+            -Headers @{ "Accept" = "application/vnd.github+json" } `
+            -TimeoutSec 5
+        if ($release.tag_name) {
+            $Surum = $release.tag_name
+            Write-Ok "En son surum: $Surum"
+        } else {
+            Write-Skip "Henuz yayinlanmis bir surum yok, 'main' dali kurulacak."
+        }
+    } catch {
+        Write-Skip "GitHub'a ulasilamadi, 'main' dali kurulacak."
     }
 }
 

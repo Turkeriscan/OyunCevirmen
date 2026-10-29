@@ -24,13 +24,20 @@ bilgisayarda programı ilk kez kuracaksanız:
    yeterli.
 
 Bu betiği zaten kurulu bir sistemde de çalıştırabilirsiniz; eksik/bozuk
-bir şey varsa tamamlar, projeyi GitHub'daki son sürüme günceller,
-zaten kurulu olanları atlar.
+bir şey varsa tamamlar, projeyi GitHub'daki son **yayınlanmış sürüme**
+(aşağıya bakın) günceller, zaten kurulu olanları atlar.
+
+**Varsayılan sürüm:** `kurulum.ps1` (ve dolayısıyla `Kurulum.bat`), hiçbir
+parametre verilmezse GitHub'da yayınlanmış **en son sürümü** (release
+etiketini) otomatik bulup onu kurar — `main` dalındaki henüz test
+edilmemiş değişiklikleri değil. GitHub'a ulaşılamazsa (internet yok,
+henüz hiç sürüm yayınlanmamış) sessizce `main` dalına döner.
+`guncelle.ps1` ise (rutin güncelleme) hâlâ üzerinde bulunduğunuz dalı/
+etiketi takip eder.
 
 **Belirli bir sürümü kurmak isterseniz:** Hem `Kurulum.bat`/`kurulum.ps1`
 hem de `Guncelle.bat`/`guncelle.ps1`, bir `$Surum` parametresi kabul eder.
-Boş bırakılırsa (varsayılan) her zaman en güncel `main` dalı kurulur/
-güncellenir. Belirli bir etiketi/dalı sabitlemek için PowerShell'den:
+Belirli bir etiketi/dalı sabitlemek için PowerShell'den:
 ```
 powershell -ExecutionPolicy Bypass -File kurulum.ps1 -Surum v1.2.0
 powershell -ExecutionPolicy Bypass -File guncelle.ps1 -Surum v1.2.0
