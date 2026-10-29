@@ -247,3 +247,20 @@ def test_non_fallback_result_cached_without_fallback_flag(tmp_path):
     key = cache_mod._make_key("Hi", "auto", "tr", "ollama")
     _text, is_fallback, _created, _is_manual = manager.cache._mem[key]
     assert is_fallback is False
+
+
+# ---------------------------------------- 2.3: OCR hatalarini tolere etme
+def test_system_prompt_includes_ocr_error_tolerance_rule():
+    assert "OCR" in translate.SYSTEM_PROMPT_TR
+    assert "misreads" in translate.SYSTEM_PROMPT_TR
+    assert "do not mention or explain the correction" in translate.SYSTEM_PROMPT_TR
+
+
+def test_ocr_tolerance_rule_does_not_weaken_hallucination_guard():
+    """Yeni kural, modelin ne yapmasi gerektigini anlatan sistem talimatina
+    eklendi - _looks_like_hallucination SADECE ciktinin kendisine
+    (uzunluk/bicimleme) bakar, bu kuraldan bagimsiz calismaya devam
+    etmeli."""
+    long_fake = "Bu çok uzun ve alakasız bir açıklama metni " * 5
+    assert translate._looks_like_hallucination("Hi", long_fake)
+    assert not translate._looks_like_hallucination("Hi", "Merhaba")

@@ -35,6 +35,10 @@ SYSTEM_PROMPT_TR = (
     "like a fragment or garbled OCR output.\n"
     "- If the text is unclear or garbled, translate it as literally as possible "
     "anyway. Do not refuse, do not ask for clarification, do not comment on it.\n"
+    "- The source text comes from OCR, so it may contain obvious character "
+    "misreads (e.g. l/I/1, 0/O, rn/m confusion) or missing/extra spaces between "
+    "words. Silently interpret and correct these as the most likely intended "
+    "word before translating; do not mention or explain the correction.\n"
     "- Do not add quotes, markdown formatting, or the original text."
 )
 
