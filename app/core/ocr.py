@@ -229,6 +229,45 @@ class WindowsOCREngine:
 
 
 # --------------------------------------------------------------------------
+# RapidOCR (onnxruntime-directml) - ekran karti ureticisinden BAGIMSIZ hizli
+# OCR: DirectML sayesinde NVIDIA/AMD/Intel ekran kartlarinda calisir.
+# "isteğe bağlı kurulum"dur (requirements.txt'e DAHIL EDILMEDI); kurulu
+# degilse OCRManager._build_engine() sessizce Windows OCR'a doner.
+# --------------------------------------------------------------------------
+class RapidOCREngine:
+    name = "rapidocr"
+
+    def __init__(self):
+        from rapidocr_onnxruntime import RapidOCR
+
+        self._engine = RapidOCR()
+        logger.info("RapidOCR yuklendi.")
+
+    def recognize(self, frame_bgr, offset=(0, 0)):
+        try:
+            results, _elapse = self._engine(frame_bgr)
+        except Exception as exc:
+            logger.error("RapidOCR tanima hatasi: %s", exc)
+            return []
+        if not results:
+            return []
+
+        ox, oy = offset
+        out = []
+        for box_points, text, score in results:
+            text = (text or "").strip()
+            if not text:
+                continue
+            xs = [p[0] for p in box_points]
+            ys = [p[1] for p in box_points]
+            l, t, r, b = min(xs), min(ys), max(xs), max(ys)
+            out.append(
+                OCRBoxResult(text=text, confidence=float(score), bbox=(l + ox, t + oy, r + ox, b + oy))
+            )
+        return out
+
+
+# --------------------------------------------------------------------------
 # EasyOCR (GPU - PyTorch/CUDA)
 # --------------------------------------------------------------------------
 class EasyOCREngine:
@@ -380,6 +419,8 @@ class OCRManager:
                 return EasyOCREngine(langs=[lang])
             if wanted == "paddle":
                 return PaddleOCREngine(lang=lang)
+            if wanted == "rapidocr":
+                return RapidOCREngine()
             return WindowsOCREngine(lang=lang)
         except Exception as exc:
             logger.error("OCR motoru '%s' yuklenemedi (%s), Windows OCR'a donuluyor.", wanted, exc)

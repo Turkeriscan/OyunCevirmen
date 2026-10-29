@@ -14,6 +14,8 @@ from app.ui.widgets import (Combo, IconButton, Page, SettingsGroup, label, secti
 OCR_ENGINES = [
     ("windows", "Windows OCR", "Windows'la gelir, kurulum istemez."),
     ("easyocr", "EasyOCR (ekran kartı)", "Süslü oyun yazı tiplerinde daha isabetli."),
+    ("rapidocr", "RapidOCR (hızlı, her ekran kartı)", "NVIDIA/AMD/Intel ekran kartlarında çalışır; "
+                                                        "isteğe bağlı bir kurulum gerektirir."),
 ]
 TRANSLATE_ENGINES = [
     ("ollama", "Ollama", "Bilgisayarında çalışır, internet gerekmez."),

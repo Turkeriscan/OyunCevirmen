@@ -5,6 +5,7 @@ dil kontrolu, kucuk yazi buyutme + koordinat geri olcekleme.
 Gercek ekran kartina, Windows OCR'a veya internete ihtiyac duymaz;
 winsdk/winocr cagrilari sahte (mock) nesnelerle degistirilir.
 """
+import sys
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -260,3 +261,67 @@ def test_get_engine_releases_old_engine_when_only_lang_changes():
         manager.get_engine()
 
     release.assert_called_once_with(fake_old)
+
+
+# --------------------------------------------------------------- RapidOCR (3.1)
+def test_rapidocr_engine_converts_results_to_ocr_box_results():
+    fake_rapidocr_instance = MagicMock()
+    fake_rapidocr_instance.return_value = (
+        [
+            ([[10, 10], [110, 10], [110, 40], [10, 40]], "Hello World", 0.95),
+            ([[0, 0], [5, 0], [5, 5], [0, 5]], "", 0.2),  # bos metin elenmeli
+        ],
+        0.123,
+    )
+    fake_module = type("M", (), {"RapidOCR": MagicMock(return_value=fake_rapidocr_instance)})()
+
+    with patch.dict(sys.modules, {"rapidocr_onnxruntime": fake_module}):
+        engine = ocr.RapidOCREngine()
+        results = engine.recognize(np.zeros((50, 150, 3), dtype=np.uint8), offset=(100, 200))
+
+    assert len(results) == 1
+    assert results[0].text == "Hello World"
+    assert results[0].confidence == 0.95
+    assert results[0].bbox == (110.0, 210.0, 210.0, 240.0)
+
+
+def test_rapidocr_engine_handles_recognition_exception_gracefully():
+    fake_rapidocr_instance = MagicMock(side_effect=RuntimeError("patlat"))
+    fake_module = type("M", (), {"RapidOCR": MagicMock(return_value=fake_rapidocr_instance)})()
+
+    with patch.dict(sys.modules, {"rapidocr_onnxruntime": fake_module}):
+        engine = ocr.RapidOCREngine()
+        results = engine.recognize(np.zeros((50, 150, 3), dtype=np.uint8))
+
+    assert results == []
+
+
+def test_rapidocr_engine_handles_empty_results():
+    fake_rapidocr_instance = MagicMock(return_value=(None, 0.0))
+    fake_module = type("M", (), {"RapidOCR": MagicMock(return_value=fake_rapidocr_instance)})()
+
+    with patch.dict(sys.modules, {"rapidocr_onnxruntime": fake_module}):
+        engine = ocr.RapidOCREngine()
+        results = engine.recognize(np.zeros((50, 150, 3), dtype=np.uint8))
+
+    assert results == []
+
+
+def test_build_engine_falls_back_to_windows_when_rapidocr_unavailable():
+    """RapidOCR kurulu degilse (gercek ortamda genelde oyle), sessizce
+    Windows OCR'a donulmeli - programi cokertmemeli."""
+    cfg = {"ocr_engine": "rapidocr", "source_lang": "auto"}
+    manager = ocr.OCRManager(cfg)
+
+    import builtins
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "rapidocr_onnxruntime":
+            raise ImportError("kurulu degil")
+        return real_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=fake_import):
+        engine = manager.get_engine()
+
+    assert engine.name == "windows"
