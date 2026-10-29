@@ -86,6 +86,26 @@ def test_ocr_contrast_enhance_wrong_type_resets_to_default(isolated_config):
     assert cfg["ocr_contrast_enhance"] is False
 
 
+def test_live_auto_pause_enabled_default_is_true():
+    assert config_mod.DEFAULT_CONFIG["live_auto_pause_enabled"] is True
+
+
+def test_live_cutscene_skip_enabled_default_is_true():
+    assert config_mod.DEFAULT_CONFIG["live_cutscene_skip_enabled"] is True
+
+
+def test_live_auto_pause_enabled_wrong_type_resets_to_default(isolated_config):
+    isolated_config.write_text(json.dumps({"live_auto_pause_enabled": "evet"}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["live_auto_pause_enabled"] is True
+
+
+def test_live_cutscene_skip_enabled_wrong_type_resets_to_default(isolated_config):
+    isolated_config.write_text(json.dumps({"live_cutscene_skip_enabled": "evet"}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["live_cutscene_skip_enabled"] is True
+
+
 def test_wrong_type_string_field_resets_to_default(isolated_config):
     isolated_config.write_text(json.dumps({"ocr_engine": 42}), encoding="utf-8")
     cfg = config_mod.load_config()

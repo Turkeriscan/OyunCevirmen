@@ -26,6 +26,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
+from app.core import activity as activity_mod
 from app.core import capture as capture_mod
 from app.core import ocr as ocr_mod
 from app.core import translate as translate_mod
@@ -159,6 +160,42 @@ def _typewriter_check(prev_state, text, now, debounce_seconds):
             return True, prev_state
         return False, {"text": text, "stable_since": prev_state["stable_since"], "growing": False}
     return False, {"text": text, "stable_since": now, "growing": False}
+
+
+# ------------------------------------------- 3.4: kaynak tasarrufu (canli mod)
+LIVE_CUTSCENE_CHANGE_RATIO = 0.6  # hucrelerin bu orandan fazlasi degisirse "sinematik" sayilir
+LIVE_MAX_INTERVAL_SECONDS = 3.0
+LIVE_INTERVAL_GROWTH_FACTOR = 1.5
+LIVE_OVERRUN_STREAK_NEEDED = 3  # buyutmeden once gereken ardisik "yavas tur" sayisi
+
+
+def _is_cutscene_like(changed_count, total_count, ratio=LIVE_CUTSCENE_CHANGE_RATIO):
+    """Bir turda hucrelerin COGU birden degismisse (orn. sinematik/sahne
+    gecisi), bu kare gercek diyalog degil buyuk olasilikla gorsel bir
+    gecis olarak kabul edilip OCR/ceviriye hic gonderilmez - bosu bosuna
+    GPU/Ollama yuku binmesin diye."""
+    if total_count <= 0:
+        return False
+    return (changed_count / total_count) >= ratio
+
+
+def _compute_next_interval(current_interval, elapsed, max_interval, overrun_streak,
+                            streak_needed=LIVE_OVERRUN_STREAK_NEEDED,
+                            growth_factor=LIVE_INTERVAL_GROWTH_FACTOR):
+    """Bir taramanin suresi (elapsed) mevcut araligi (current_interval) asarsa
+    ardisik asim sayisini (overrun_streak) bir arttirir; bu sayi
+    streak_needed'e ulasinca aralik growth_factor ile buyutulur (max_interval'i
+    asmaz) ve sayac sifirlanir - tek seferlik bir yavaslama (orn. gecici bir
+    disk/GC takilmasi) yuzunden araligin hemen buyumesi istenmez.
+
+    (yeni_aralik, yeni_overrun_streak, buyudu_mu) dondurur."""
+    if elapsed > current_interval:
+        overrun_streak += 1
+        if overrun_streak >= streak_needed:
+            new_interval = min(current_interval * growth_factor, max_interval)
+            return new_interval, 0, new_interval > current_interval
+        return current_interval, overrun_streak, False
+    return current_interval, 0, False
 
 
 class AppBridge(QtCore.QObject):
@@ -368,8 +405,35 @@ class Orchestrator:
         grid = None
         frame_h = frame_w = None
 
+        # ---- 3.4: kaynak tasarrufu ----
+        auto_pause_enabled = self.config.get("live_auto_pause_enabled", True)
+        cutscene_skip_enabled = self.config.get("live_cutscene_skip_enabled", True)
+        # Oyunun .exe'si: canli mod ACILDIGI anda on planda olan pencereden
+        # tahmin edilir (oyuncu F10'a basarken oyunun icinde oldugu varsayilir).
+        # Henuz oyun bazli profil (bkz. 4.1) olmadigi icin en iyi tahmin bu.
+        game_exe = activity_mod.get_foreground_exe_name()
+        own_exe = activity_mod.own_exe_name()
+        was_paused = False
+        overrun_streak = 0
+
         while not self._live_stop_event.is_set():
             t0 = time.time()
+
+            if auto_pause_enabled:
+                fg_exe = activity_mod.get_foreground_exe_name()
+                idle_seconds = activity_mod.get_idle_seconds()
+                if activity_mod.should_pause_live(fg_exe, idle_seconds, game_exe, own_exe,
+                                                   auto_pause_enabled):
+                    if not was_paused:
+                        logger.info(
+                            "Canli mod duraklatildi (oyun arka planda ya da sistem bosta).")
+                        was_paused = True
+                    time.sleep(interval)
+                    continue
+                if was_paused:
+                    logger.info("Canli mod devam ediyor.")
+                    was_paused = False
+
             frame = self.capturer.grab_full()
             if frame is None:
                 time.sleep(interval)
@@ -385,6 +449,37 @@ class Orchestrator:
                 self._sleep_remaining(t0, interval)
                 continue
 
+            # Degisim tespiti HUCRENIN KENDI sinirlariyla yapilir (ritim/performans
+            # icin), ama OCR'a gonderilen kirpma bu sinirin disina da tasar
+            # (padding). Boylece hucre sinirina denk gelen bir kelime
+            # ("HELLO WORLD" gibi) ikiye bolunup anlamsiz parcalara ayrilmaz;
+            # her iki komsu hucre de kelimenin TAMAMINI gorur.
+            changed_cells = []
+            for idx, cell in enumerate(grid):
+                sig = capture_mod.cell_signature(frame, cell)
+                if capture_mod.signature_changed(cell_signatures.get(idx), sig):
+                    changed_cells.append((idx, cell, sig))
+
+            # "cell_signatures bos" ILK tur anlamina gelir (hucrelerin HEPSI
+            # o an "degismis" sayilir, cunku henuz onceki bir referans yok) -
+            # bu durumda sinematik atlamasi UYGULANMAZ, aksi halde canli mod
+            # her acildiginda ilk kare hic OCR'lanmadan atlanirdi.
+            if (cell_signatures and cutscene_skip_enabled
+                    and _is_cutscene_like(len(changed_cells), len(grid))):
+                # Hucrelerin COGU birden degismis - gercek diyalog degil buyuk
+                # olasilikla sinematik/sahne gecisi. OCR/ceviriye hic
+                # gonderme, ama imzalari guncelle ki gecis bitince normal
+                # degisim tespiti dogru calissin.
+                for idx, _cell, sig in changed_cells:
+                    cell_signatures[idx] = sig
+                prev_frame = frame
+                logger.info(
+                    "Buyuk ekran degisimi (sinematik olabilir), bu kare atlandi (%d/%d hucre degisti).",
+                    len(changed_cells), len(grid),
+                )
+                self._sleep_remaining(t0, interval)
+                continue
+
             any_change = False
             tick_total = 0
             tick_cache_hits = 0
@@ -394,16 +489,7 @@ class Orchestrator:
             target_lang = self.config.get("target_lang", "tr")
             engine_pref = self.config.get("translate_engine", "ollama")
 
-            for idx, cell in enumerate(grid):
-                # Degisim tespiti HUCRENIN KENDI sinirlariyla yapilir (ritim/performans
-                # icin), ama OCR'a gonderilen kirpma bu sinirin disina da tasar
-                # (padding). Boylece hucre sinirina denk gelen bir kelime
-                # ("HELLO WORLD" gibi) ikiye bolunup anlamsiz parcalara ayrilmaz;
-                # her iki komsu hucre de kelimenin TAMAMINI gorur.
-                sig = capture_mod.cell_signature(frame, cell)
-                prev_sig = cell_signatures.get(idx)
-                if not capture_mod.signature_changed(prev_sig, sig):
-                    continue
+            for idx, cell, sig in changed_cells:
                 any_change = True
                 cell_signatures[idx] = sig
                 generation = cell_generation.get(idx, 0) + 1
@@ -444,6 +530,14 @@ class Orchestrator:
                     [b.text for b in flat][:8],
                 )
 
+            elapsed = time.time() - t0
+            interval, overrun_streak, grew = _compute_next_interval(
+                interval, elapsed, LIVE_MAX_INTERVAL_SECONDS, overrun_streak)
+            if grew:
+                logger.warning(
+                    "Taramalar yavas kaliyor (%.2f sn), tarama araligi %.2f sn'ye buyutuldu.",
+                    elapsed, interval,
+                )
             self._sleep_remaining(t0, interval)
 
         logger.info("Canli mod dongusu sonlandi.")

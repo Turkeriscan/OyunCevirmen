@@ -64,6 +64,12 @@ DEFAULT_CONFIG = {
     # CLAHE ile kontrasti artirir; acik-uzerine-acik (soluk) yazilar icin
     # OCR isabetini artirabilir ama her oyunda gerekli degildir, varsayilan kapali.
     "ocr_contrast_enhance": False,
+    # Oyun arka plana alinirsa veya bilgisayar bosta kalirsa canli modu
+    # gecici olarak duraklatir (kaynak tasarrufu).
+    "live_auto_pause_enabled": True,
+    # Ekranin cogu birden degisirse (sinematik/sahne gecisi) o kareyi
+    # cevirmeye hic gondermez.
+    "live_cutscene_skip_enabled": True,
     # Canli modda onbellekte olmayan satirlar en fazla bu kadar is parcaciginda
     # AYNI ANDA cevrilir (Ollama'ya asiri paralel yuk binmesin diye sinirli).
     "translate_parallel_workers": 3,

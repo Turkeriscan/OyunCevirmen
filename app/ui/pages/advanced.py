@@ -37,6 +37,23 @@ class AdvancedPage(Page):
         self.body.addWidget(g)
 
         self.body.addSpacing(px(10))
+        self.body.addWidget(section_header("Kaynak tasarrufu"))
+        g_power = SettingsGroup()
+        self.combo_auto_pause = Combo()
+        self.combo_auto_pause.addItem("Açık", True)
+        self.combo_auto_pause.addItem("Kapalı", False)
+        g_power.row("Oyun arka plandayken duraklat", "Oyun pencereden çıkınca ya da bilgisayar "
+                    "boşta kalınca canlı modu geçici olarak duraklatır.",
+                    self.combo_auto_pause)
+        self.combo_cutscene_skip = Combo()
+        self.combo_cutscene_skip.addItem("Açık", True)
+        self.combo_cutscene_skip.addItem("Kapalı", False)
+        g_power.row("Sinematikleri atla", "Ekranın büyük bölümü birden değişirse (sahne geçişi "
+                    "gibi) o kareyi çevirmeye göndermez.",
+                    self.combo_cutscene_skip)
+        self.body.addWidget(g_power)
+
+        self.body.addSpacing(px(10))
         self.body.addWidget(section_header("Neyi çevirmesin"))
         g2 = SettingsGroup()
         self.st_minlen = Stepper(1, 20, 1, "harf")
@@ -103,6 +120,8 @@ class AdvancedPage(Page):
             s.valueChanged.connect(ctx.schedule_save)
         self.combo_upscale.currentIndexChanged.connect(ctx.schedule_save)
         self.combo_contrast.currentIndexChanged.connect(ctx.schedule_save)
+        self.combo_auto_pause.currentIndexChanged.connect(ctx.schedule_save)
+        self.combo_cutscene_skip.currentIndexChanged.connect(ctx.schedule_save)
         self.combo_monitor.currentIndexChanged.connect(self._monitor_changed)
 
     # --------------------------------------------------------- ekranlar
@@ -145,6 +164,10 @@ class AdvancedPage(Page):
         self.combo_upscale.setCurrentIndex(i if i >= 0 else 0)
         i = self.combo_contrast.findData(bool(cfg.get("ocr_contrast_enhance", False)))
         self.combo_contrast.setCurrentIndex(i if i >= 0 else 1)
+        i = self.combo_auto_pause.findData(bool(cfg.get("live_auto_pause_enabled", True)))
+        self.combo_auto_pause.setCurrentIndex(i if i >= 0 else 0)
+        i = self.combo_cutscene_skip.findData(bool(cfg.get("live_cutscene_skip_enabled", True)))
+        self.combo_cutscene_skip.setCurrentIndex(i if i >= 0 else 0)
         self.refresh_monitors(select_index=cfg.get("capture_monitor_index", 0))
 
     def save(self, cfg):
@@ -158,4 +181,6 @@ class AdvancedPage(Page):
         cfg["max_cache_memory_items"] = self.st_cache.value()
         cfg["ocr_upscale_small_text"] = bool(self.combo_upscale.currentData())
         cfg["ocr_contrast_enhance"] = bool(self.combo_contrast.currentData())
+        cfg["live_auto_pause_enabled"] = bool(self.combo_auto_pause.currentData())
+        cfg["live_cutscene_skip_enabled"] = bool(self.combo_cutscene_skip.currentData())
         # capture_monitor_index: _monitor_changed -> orchestrator.change_monitor yonetir
