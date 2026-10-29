@@ -1,0 +1,233 @@
+lang,text
+en,Inventory is full
+en,I need help
+en,It is dangerous
+en,Items
+en,OPTIONS
+en,SETTINGS
+en,INVENTORY
+en,EXIT
+en,CONTINUE
+en,NEW GAME
+en,Press I to open inventory
+en,You have died
+en,Quest completed
+en,Press E to interact
+en,Game Over
+en,Loading
+en,Save your progress
+en,Are you sure you want to quit?
+en,This weapon requires level 10
+en,You found a rare item
+en,The door is locked
+en,Health potion restores 50 HP
+en,Welcome to the tutorial
+en,Press any key to continue
+en,Your character has leveled up
+en,Equip this armor for more defense
+en,The merchant is closed right now
+en,A wild wolf appears
+en,Insert coin to continue
+en,PAUSE MENU
+en,RESUME GAME
+en,MAIN MENU
+en,LOAD GAME
+en,CONTROLS
+en,AUDIO SETTINGS
+en,GRAPHICS
+en,CREDITS
+en,Achievement unlocked
+en,Checkpoint reached
+en,Mission failed
+en,You cannot carry any more items
+en,Open the chest to see what is inside
+en,Follow the path to the north
+en,Beware of traps ahead
+en,Talk to the village elder
+en,This item cannot be sold
+en,Press Tab to view the map
+en,Your stamina is low
+en,Enemy spotted nearby
+en,Defeat all enemies to proceed
+en,Collect five crystals to unlock the gate
+de,Über die Brücke
+de,Größe
+de,Das Inventar ist voll
+de,Drücke E zum Interagieren
+de,Du bist gestorben
+de,Mission fehlgeschlagen
+de,Öffne die Truhe
+de,Der Händler ist geschlossen
+de,Herzlich willkommen im Tutorial
+de,Drücke eine beliebige Taste
+de,Dein Charakter ist aufgestiegen
+de,Die Tür ist verschlossen
+de,Gesundheitstrank stellt 50 HP wieder her
+de,Ein wilder Wolf erscheint
+de,Münze einwerfen um fortzufahren
+de,PAUSEMENÜ
+de,SPIEL FORTSETZEN
+de,HAUPTMENÜ
+de,SPIEL LADEN
+de,STEUERUNG
+de,Erfolg freigeschaltet
+de,Kontrollpunkt erreicht
+de,Du kannst keine weiteren Gegenstände tragen
+de,Folge dem Pfad nach Norden
+de,Vorsicht vor Fallen
+de,Sprich mit dem Dorfältesten
+fr,Ça va, garçon
+fr,L'inventaire est plein
+fr,Appuyez sur E pour interagir
+fr,Vous êtes mort
+fr,Mission échouée
+fr,Ouvrez le coffre
+fr,Le marchand est fermé
+fr,Bienvenue dans le tutoriel
+fr,Appuyez sur une touche pour continuer
+fr,Votre personnage a gagné un niveau
+fr,La porte est verrouillée
+fr,La potion de soin restaure 50 PV
+fr,Un loup sauvage apparaît
+fr,Insérez une pièce pour continuer
+fr,MENU PAUSE
+fr,REPRENDRE LA PARTIE
+fr,MENU PRINCIPAL
+fr,CHARGER LA PARTIE
+fr,CONTRÔLES
+fr,Succès débloqué
+fr,Point de contrôle atteint
+fr,Vous ne pouvez plus rien transporter
+fr,Suivez le chemin vers le nord
+fr,Attention aux pièges
+fr,Parlez à l'ancien du village
+es,Abre la puerta de la casa
+es,El inventario está lleno
+es,Pulsa E para interactuar
+es,Has muerto
+es,Misión fallida
+es,Abre el cofre
+es,El comerciante está cerrado
+es,Bienvenido al tutorial
+es,Pulsa cualquier tecla para continuar
+es,Tu personaje ha subido de nivel
+es,La puerta está cerrada
+es,La poción de salud restaura 50 PS
+es,Aparece un lobo salvaje
+es,Inserta una moneda para continuar
+es,MENÚ DE PAUSA
+es,REANUDAR PARTIDA
+es,MENÚ PRINCIPAL
+es,CARGAR PARTIDA
+es,CONTROLES
+es,Logro desbloqueado
+es,Punto de control alcanzado
+es,No puedes llevar más objetos
+es,Sigue el camino hacia el norte
+es,Cuidado con las trampas
+es,Habla con el anciano del pueblo
+pt,O jogo começa
+pt,O inventário está cheio
+pt,Pressione E para interagir
+pt,Você morreu
+pt,Missão fracassada
+pt,Abra o baú
+pt,O mercador está fechado
+pt,Bem-vindo ao tutorial
+pt,Pressione qualquer tecla para continuar
+pt,Seu personagem subiu de nível
+pt,A porta está trancada
+pt,A poção de vida restaura 50 PV
+pt,Um lobo selvagem aparece
+pt,Insira uma moeda para continuar
+pt,MENU DE PAUSA
+pt,RETOMAR JOGO
+pt,MENU PRINCIPAL
+pt,CARREGAR JOGO
+pt,CONTROLES
+pt,Conquista desbloqueada
+pt,Ponto de checagem alcançado
+pt,Você não pode carregar mais itens
+pt,Siga o caminho para o norte
+pt,Cuidado com as armadilhas
+pt,Fale com o ancião da aldeia
+it,Il tuo inventario è pieno
+it,Premi E per interagire
+it,Sei morto
+it,Missione fallita
+it,Apri la cassa
+it,Il mercante è chiuso
+it,Benvenuto nel tutorial
+it,Premi un tasto qualsiasi per continuare
+it,Il tuo personaggio è salito di livello
+it,La porta è chiusa a chiave
+it,La pozione di cura ripristina 50 PS
+it,Appare un lupo selvaggio
+it,Inserisci una moneta per continuare
+it,MENU DI PAUSA
+it,RIPRENDI PARTITA
+it,MENU PRINCIPALE
+it,CARICA PARTITA
+it,CONTROLLI
+it,Obiettivo sbloccato
+it,Checkpoint raggiunto
+it,Non puoi portare altri oggetti
+it,Segui il sentiero verso nord
+it,Attenzione alle trappole
+it,Parla con l'anziano del villaggio
+ru,Инвентарь полон
+ru,Нажмите E для взаимодействия
+ru,Вы погибли
+ru,Миссия провалена
+ru,Откройте сундук
+ru,Торговец закрыт
+ru,Добро пожаловать в обучение
+ru,Нажмите любую клавишу для продолжения
+ru,Ваш персонаж повысил уровень
+ru,Дверь заперта
+ru,Зелье здоровья восстанавливает 50 HP
+ru,Появляется дикий волк
+ru,Вставьте монету чтобы продолжить
+ru,МЕНЮ ПАУЗЫ
+ru,ПРОДОЛЖИТЬ ИГРУ
+ru,ГЛАВНОЕ МЕНЮ
+ru,ЗАГРУЗИТЬ ИГРУ
+ru,УПРАВЛЕНИЕ
+ru,Достижение разблокировано
+ru,Контрольная точка достигнута
+ru,Вы не можете нести больше предметов
+ru,Следуйте по тропе на север
+ru,Осторожно, ловушки
+ru,Поговорите со старейшиной деревни
+tr,Kapıyı açmak için E'ye bas
+tr,Envanter dolu
+tr,Çantanda yer yok
+tr,Göreve devam et
+tr,Oyun bitti
+tr,Yükleniyor
+tr,İlerlemeni kaydet
+tr,Çıkmak istediğinden emin misin?
+tr,Bu silah seviye 10 gerektirir
+tr,Nadir bir eşya buldun
+tr,Kapı kilitli
+tr,Can iksiri 50 can puanı yeniler
+tr,Öğreticiye hoş geldin
+tr,Devam etmek için bir tuşa bas
+tr,Karakterin seviye atladı
+tr,Daha fazla savunma için bu zırhı giy
+tr,Tüccar şu anda kapalı
+tr,Vahşi bir kurt ortaya çıktı
+tr,Devam etmek için para at
+tr,DURAKLATMA MENÜSÜ
+tr,OYUNA DEVAM ET
+tr,ANA MENÜ
+tr,OYUNU YÜKLE
+tr,Haritayı aç
+tr,Başarım açıldı
+tr,Kontrol noktasına ulaşıldı
+tr,Daha fazla eşya taşıyamazsın
+tr,Işığı takip et
+tr,Tuzaklara karşı dikkatli ol
+tr,Köy büyüğüyle konuş
+tr,Güçlü silahını seç
+tr,Yeni tarifler kilidi açıldı

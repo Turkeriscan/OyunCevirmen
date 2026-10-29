@@ -19,8 +19,31 @@ except Exception:
 
 # Sadece Turkceye OZGU harfler (Almanca/Fransizca/Portekizce de ç/ö/ü kullanir,
 # bu yuzden onlar ayri ve daha zayif bir sinyal sayilir - bkz. _TURKISH_WEAK_CHARS).
-_TURKISH_STRONG_CHARS = set("ğıİşĞIŞ")
-_TURKISH_WEAK_CHARS = set("çöüÇÖÜ")
+#
+# ONEMLI: Buraya ASCII "I" (U+0049) KESINLIKLE EKLENMEMELI. Turkce'de buyuk
+# noktasiz I ile Ingilizce "I" harfi AYNI Unicode kod noktasini (U+0049)
+# paylasir - bu yuzden "I" harfini "kesin Turkce sinyali" saymak "Inventory
+# is full", "I need help", "Items", "OPTIONS" gibi gayet sIradan Ingilizce
+# metinleri (ve tum BUYUK HARFLI Ingilizce menuleri) Turkce sanip atlatirdi.
+# Harfleri duz metin yerine BILEREK \u kod noktalariyla yaziyoruz; bu hata
+# ("ğıİşĞIŞ" gibi duz bir dizgi icine yanlislikla ASCII I sizdirmak) boylece
+# ileride tekrarlanamaz - her karakter acikca ne oldugunu soyler.
+_TURKISH_STRONG_CHARS = {
+    "ğ",  # g-breve kucuk harf (lowercase g-breve)
+    "Ğ",  # G-breve buyuk harf (uppercase G-breve)
+    "ı",  # noktasiz kucuk i - ASCII "I" (U+0049) ILE KARISTIRILMAMALI
+    "İ",  # noktali buyuk I
+    "ş",  # s-cedilla kucuk harf
+    "Ş",  # S-cedilla buyuk harf
+}
+_TURKISH_WEAK_CHARS = {
+    "ç",  # c-cedilla kucuk harf
+    "ö",  # o-umlaut kucuk harf
+    "ü",  # u-umlaut kucuk harf
+    "Ç",  # c-cedilla buyuk harf
+    "Ö",  # o-umlaut buyuk harf
+    "Ü",  # u-umlaut buyuk harf
+}
 
 # Kisa fonksiyon kelimeleri: digerdillerle (Ispanyolca/Portekizce/Italyanca/
 # Fransizca) carpisanlar ("de", "da", "o", "ne", "ya", "su", "mi", "la"...)
@@ -38,10 +61,12 @@ _TURKISH_STOPWORDS = {
 # gibi aksansiz kisa cumleleri yakalamak icin (langdetect bu tur kisa
 # metinlerde guvenilmez - bkz. is_probably_turkish).
 _TURKISH_COMMON_WORDS = {
-    "dolu", "boş", "bos", "tam", "yeni", "eski", "oyun", "can", "envanter",
+    "dolu", "boş", "bos", "tam", "yeni", "eski", "oyun", "oyuna", "can", "envanter",
     "devam", "zaman", "harita", "seviye", "puan", "aktif", "durum", "silah",
     "zırh", "zirh", "altın", "altin", "para", "ekip", "görev", "gorev",
     "başarı", "basari", "menü", "menu", "ayarlar", "kaydet", "yükle", "yukle",
+    "bitti", "yükleniyor", "yukleniyor", "duraklatma", "duraklat",
+    "takip", "dikkat", "kontrol", "tuzak", "tuzaklar",
 }
 
 _TURKISH_WORDS = _TURKISH_STOPWORDS | _TURKISH_COMMON_WORDS
