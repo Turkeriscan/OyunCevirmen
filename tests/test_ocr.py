@@ -325,3 +325,131 @@ def test_build_engine_falls_back_to_windows_when_rapidocr_unavailable():
         engine = manager.get_engine()
 
     assert engine.name == "windows"
+
+
+# ---------------------------------------- 3.2: kucuk yazi buyutme (aninda tarama)
+class _FakeFullFrameEngine:
+    """Bir TAM ekran karesi icin ilk gecisi, ve kirpilmis/buyutulmus
+    bolgeler icin ikinci gecisi simule eden sahte motor."""
+
+    def __init__(self, first_pass, region_results):
+        self.name = "fake"
+        self._first_pass = first_pass
+        self._region_results = region_results  # {(l,t,r,b) tam kare uzerinde: [OCRBoxResult,...]}
+        self.region_calls = []
+
+    def recognize(self, frame_bgr, offset=(0, 0)):
+        h, w = frame_bgr.shape[:2]
+        if w * h > ocr.UPSCALE_MAX_PIXELS:
+            return self._first_pass
+        self.region_calls.append((w, h))
+        # Kucuk kirpilmis/buyutulmus bolge icin: hangi bolge oldugunu
+        # tam olarak bilemeyiz (sadece boyutundan), bu yuzden test
+        # sirayla hangi kirpmanin bu cagrida oldugunu self._region_results
+        # listesinden sirayla tuketir.
+        if self._region_results:
+            return self._region_results.pop(0)
+        return []
+
+
+def test_recognize_refines_small_text_region_on_large_frame():
+    """Buyuk (tam ekran boyutlu) bir karede, kucuk yazili bir sonuc
+    kirpilip buyutulup YENIDEN okunmali ve daha iyi sonucla
+    DEGISTIRILMELI."""
+    first_pass = [ocr.OCRBoxResult("lnventary", 0.5, (100, 100, 200, 112))]  # 12px yukseklik -> kucuk
+    region_results = [[ocr.OCRBoxResult("Inventory", 0.9, (0, 0, 180, 24))]]
+    fake_engine = _FakeFullFrameEngine(first_pass, region_results)
+
+    cfg = {"ocr_engine": "windows", "source_lang": "auto", "ocr_upscale_small_text": True}
+    manager = ocr.OCRManager(cfg)
+    manager._engine = fake_engine
+    manager._engine_name = "windows"
+    manager._engine_lang = "auto"
+
+    big_frame = np.zeros((1200, 1900, 3), dtype=np.uint8)  # > UPSCALE_MAX_PIXELS
+    results = manager.recognize(big_frame)
+
+    assert len(results) == 1
+    assert results[0].text == "Inventory"
+    assert len(fake_engine.region_calls) == 1
+
+
+def test_recognize_keeps_original_when_region_reread_finds_nothing():
+    first_pass = [ocr.OCRBoxResult("curuk", 0.4, (100, 100, 200, 112))]
+    fake_engine = _FakeFullFrameEngine(first_pass, region_results=[[]])
+
+    cfg = {"ocr_engine": "windows", "source_lang": "auto", "ocr_upscale_small_text": True}
+    manager = ocr.OCRManager(cfg)
+    manager._engine = fake_engine
+    manager._engine_name = "windows"
+    manager._engine_lang = "auto"
+
+    big_frame = np.zeros((1200, 1900, 3), dtype=np.uint8)
+    results = manager.recognize(big_frame)
+
+    assert len(results) == 1
+    assert results[0].text == "curuk"  # ilk sonuc korunmus
+
+
+def test_recognize_does_not_refine_results_with_normal_height():
+    """Yeterince buyuk yazili (kucuk sayilmayan) sonuclar YENIDEN
+    OKUNMAMALI - gereksiz yavaslatmamali."""
+    first_pass = [ocr.OCRBoxResult("Normal Text", 0.9, (100, 100, 300, 140))]  # 40px yukseklik
+    fake_engine = _FakeFullFrameEngine(first_pass, region_results=[])
+
+    cfg = {"ocr_engine": "windows", "source_lang": "auto", "ocr_upscale_small_text": True}
+    manager = ocr.OCRManager(cfg)
+    manager._engine = fake_engine
+    manager._engine_name = "windows"
+    manager._engine_lang = "auto"
+
+    big_frame = np.zeros((1200, 1900, 3), dtype=np.uint8)
+    results = manager.recognize(big_frame)
+
+    assert results == first_pass
+    assert fake_engine.region_calls == []
+
+
+def test_recognize_skips_refinement_when_upscale_disabled():
+    first_pass = [ocr.OCRBoxResult("kucuk", 0.5, (100, 100, 200, 112))]
+    fake_engine = _FakeFullFrameEngine(first_pass, region_results=[[]])
+
+    cfg = {"ocr_engine": "windows", "source_lang": "auto", "ocr_upscale_small_text": False}
+    manager = ocr.OCRManager(cfg)
+    manager._engine = fake_engine
+    manager._engine_name = "windows"
+    manager._engine_lang = "auto"
+
+    big_frame = np.zeros((1200, 1900, 3), dtype=np.uint8)
+    results = manager.recognize(big_frame)
+
+    assert results == first_pass
+    assert fake_engine.region_calls == []
+
+
+def test_refine_small_text_regions_caps_at_max_regions():
+    many_small = [
+        ocr.OCRBoxResult(f"t{i}", 0.5, (i * 10, 0, i * 10 + 20, 10))
+        for i in range(25)
+    ]
+    fake_engine = MagicMock()
+    fake_engine.recognize.return_value = []
+    frame = np.zeros((50, 500, 3), dtype=np.uint8)
+
+    refined = ocr.OCRManager._refine_small_text_regions(fake_engine, frame, many_small, max_regions=20)
+
+    assert len(refined) == 25  # hicbiri kaybolmadi
+    assert fake_engine.recognize.call_count == 20  # sadece ilk 20'si yeniden okundu
+
+
+def test_refine_small_text_regions_applies_offset_correctly():
+    fake_engine = MagicMock()
+    fake_engine.recognize.return_value = [ocr.OCRBoxResult("X", 0.9, (2, 2, 20, 18))]
+    frame = np.zeros((200, 200, 3), dtype=np.uint8)
+    original = [ocr.OCRBoxResult("x", 0.4, (50, 50, 70, 60))]  # 10px yukseklik, kucuk
+
+    refined = ocr.OCRManager._refine_small_text_regions(fake_engine, frame, original)
+
+    assert len(refined) == 1
+    # Kirpma orijini (50-12, 50-12) = (38, 38); sonuc buna gore kaydirilmali
+    assert refined[0].bbox[0] >= 38

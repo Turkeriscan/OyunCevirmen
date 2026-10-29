@@ -439,6 +439,15 @@ class OCRManager:
         # ondan sonra ekleriz (aksi halde offset de yanlislikla olceklenirdi).
         results = engine.recognize(processed, offset=(0, 0))
         results = rescale_results(results, factor)
+
+        if upscale_enabled and factor == 1.0:
+            # Kare COK BUYUK oldugu icin (orn. F9 aninda tarama - tam ekran)
+            # toptan buyutulemedi (bkz. UPSCALE_MAX_PIXELS). Onun yerine
+            # SADECE ilk gecisin bulduğu kucuk yazili bolgeleri tek tek
+            # kirpip buyutup yeniden okuyoruz - boylece kucuk yazi
+            # buyutmesi aninda taramada da ise yarar.
+            results = self._refine_small_text_regions(engine, frame_bgr, results)
+
         ox, oy = offset
         if ox or oy:
             results = [
@@ -449,6 +458,55 @@ class OCRManager:
                 for r in results
             ]
         return results
+
+    @staticmethod
+    def _refine_small_text_regions(engine, frame_bgr, results, max_regions=20,
+                                    height_threshold=20, padding=12):
+        """Ilk gecisin bulduğu, yazi yuksekligi kucuk olan (okuma hatasina
+        daha acik) sonuclari kirpip 2 kat buyutup o KUCUK bolgeyi tekrar
+        okur; daha iyi bir sonuc bulunursa onu kullanir, bulunamazsa ilk
+        sonucu korur. max_regions, cok sayida kucuk yazi oldugunda aninda
+        taramanin asiri uzamasini onler."""
+        frame_h, frame_w = frame_bgr.shape[:2]
+        refined = []
+        refined_count = 0
+        for r in results:
+            l, t, right, b = r.bbox
+            height = b - t
+            if refined_count >= max_regions or height <= 0 or height >= height_threshold:
+                refined.append(r)
+                continue
+            crop_l = max(0, int(l - padding))
+            crop_t = max(0, int(t - padding))
+            crop_r = min(frame_w, int(right + padding))
+            crop_b = min(frame_h, int(b + padding))
+            crop = frame_bgr[crop_t:crop_b, crop_l:crop_r]
+            if crop.size == 0:
+                refined.append(r)
+                continue
+            # Sayac burada (GERCEK bir yeniden-okuma DENEMESI yapilmadan
+            # once) artirilir - basarili/basarisiz olmasina bakmaksizin,
+            # aksi halde cok sayida OKUNAMAYAN kucuk bolge (hepsi bos
+            # sonuc dondurur) max_regions sinirini hic tetiklemeden
+            # taramayi yavaslatabilirdi.
+            refined_count += 1
+            upscaled_crop, crop_factor = maybe_upscale(crop, True)
+            try:
+                crop_results = engine.recognize(upscaled_crop, offset=(0, 0))
+            except Exception as exc:
+                logger.warning("Kucuk yazi bolgesi yeniden okunamadi: %s", exc)
+                crop_results = []
+            crop_results = rescale_results(crop_results, crop_factor)
+            if crop_results:
+                best = max(crop_results, key=lambda cr: cr.confidence)
+                refined.append(OCRBoxResult(
+                    best.text, best.confidence,
+                    (best.bbox[0] + crop_l, best.bbox[1] + crop_t,
+                     best.bbox[2] + crop_l, best.bbox[3] + crop_t),
+                ))
+            else:
+                refined.append(r)
+        return refined
 
 
 def merge_paragraph_lines(results):
