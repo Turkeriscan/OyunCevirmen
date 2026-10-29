@@ -34,6 +34,9 @@ CREATE_NO_WINDOW = 0x08000000
 class _Bridge(QtCore.QObject):
     models = QtCore.pyqtSignal(list)
     result = QtCore.pyqtSignal(str, str, float)
+    recommendation = QtCore.pyqtSignal(str, str)
+    download_progress = QtCore.pyqtSignal(str)
+    download_done = QtCore.pyqtSignal(bool, str)
 
 
 class TranslationPage(Page):
@@ -41,9 +44,13 @@ class TranslationPage(Page):
         super().__init__("Çeviri", "Ekrandaki yazıyı neyin okuyacağını ve neyin çevireceğini seç. "
                                    "Değişiklikler anında uygulanır.")
         self.ctx = ctx
+        self._recommended_model = None
         self._bridge = _Bridge()
         self._bridge.models.connect(self._fill_models)
         self._bridge.result.connect(self._show_result)
+        self._bridge.recommendation.connect(self._on_recommendation)
+        self._bridge.download_progress.connect(self._on_download_progress)
+        self._bridge.download_done.connect(self._on_download_done)
 
         self.body.addWidget(section_header("Motorlar"))
         g = SettingsGroup()
@@ -68,6 +75,16 @@ class TranslationPage(Page):
         model_box.addWidget(self.combo_model, 1)
         model_box.addWidget(self.btn_models)
         self.model_row = g.row("Ollama modeli", "Bilgisayarında yüklü modeller listelenir.", model_box)
+
+        rec_box = QtWidgets.QHBoxLayout()
+        rec_box.setSpacing(px(8))
+        self.lbl_model_recommend = label("", "Faint", wrap=True)
+        self.btn_model_download = text_button("Modeli indir")
+        self.btn_model_download.clicked.connect(self.download_recommended_model)
+        rec_box.addWidget(self.lbl_model_recommend, 1)
+        rec_box.addWidget(self.btn_model_download)
+        self.recommend_row = g.row(
+            "Önerilen model", "Ekran kartının belleğine göre otomatik önerilir.", rec_box)
 
         self.combo_lang = Combo()
         for code, name in SOURCE_LANGS:
@@ -260,6 +277,70 @@ class TranslationPage(Page):
             self.combo_model.clear()
             self.combo_model.addItems(names)
             self.combo_model.setCurrentText(current)
+
+    # ------------------------------------------------- model onerisi/indirme
+    def refresh_model_recommendation(self):
+        def worker():
+            from app.core import hardware
+            model, vram = hardware.recommend_model_for_this_machine()
+            if vram is not None:
+                text = f"Ekran kartı belleğin ({vram / 1024:.1f} GB) için önerilen: {model}"
+            else:
+                text = f"NVIDIA ekran kartı bulunamadı; önerilen (CPU'da da çalışır): {model}"
+            self._bridge.recommendation.emit(model, text)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def download_recommended_model(self):
+        model = self.combo_model.currentText().strip() or self._recommended_model or "aya-expanse:8b"
+        self.btn_model_download.setEnabled(False)
+        self.lbl_model_recommend.setText(f"İndiriliyor: {model}…")
+
+        def worker():
+            try:
+                proc = subprocess.Popen(
+                    ["ollama", "pull", model], creationflags=CREATE_NO_WINDOW,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                )
+                buf = b""
+                while True:
+                    chunk = proc.stdout.read(256)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while b"\r" in buf or b"\n" in buf:
+                        sep = min((i for i in (buf.find(b"\r"), buf.find(b"\n")) if i >= 0), default=-1)
+                        if sep < 0:
+                            break
+                        line, buf = buf[:sep], buf[sep + 1:]
+                        text = line.decode("utf-8", "ignore").strip()
+                        if text:
+                            self._bridge.download_progress.emit(text)
+                code = proc.wait(timeout=600)
+                if code == 0:
+                    self._bridge.download_done.emit(True, model)
+                else:
+                    self._bridge.download_done.emit(False, f"ollama pull çıkış kodu {code}")
+            except Exception as exc:
+                self._bridge.download_done.emit(False, str(exc))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_recommendation(self, model, text):
+        self._recommended_model = model
+        self.lbl_model_recommend.setText(text)
+
+    def _on_download_progress(self, text):
+        self.lbl_model_recommend.setText(text[:80])
+
+    def _on_download_done(self, ok, info):
+        self.btn_model_download.setEnabled(True)
+        if ok:
+            self.lbl_model_recommend.setText(f"{info} indirildi.")
+            self.ctx.flash(f"{info} indirildi")
+            self.refresh_models()
+        else:
+            self.lbl_model_recommend.setText(f"İndirme başarısız: {info}")
+            self.ctx.flash("Model indirilemedi; Günlük sayfasına bak")
 
     # ------------------------------------------------------------ deneme
     def run_trial(self):

@@ -105,6 +105,7 @@ class MainWindow(FramelessWindow):
             for page in self.settings_pages:
                 page.load(self.config)
         self.translation.refresh_models()
+        self.translation.refresh_model_recommendation()
 
         self._fast = QtCore.QTimer(self)
         self._fast.timeout.connect(self._refresh_fast)
