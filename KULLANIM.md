@@ -43,6 +43,14 @@ powershell -ExecutionPolicy Bypass -File kurulum.ps1 -Surum v1.2.0
 powershell -ExecutionPolicy Bypass -File guncelle.ps1 -Surum v1.2.0
 ```
 
+**Alternatif: hazır kurulum paketi (.exe).** Python/Git bilmeyen veya
+hiçbir şey kurmak istemeyen kullanıcılar için, GitHub'ın
+[Releases](https://github.com/Turkeriscan/OyunCevirmen/releases)
+sayfasında (varsa) ayrı bir Python kurulumu GEREKTİRMEYEN, Yönetici izni
+İSTEMEYEN, Başlat Menüsü/Masaüstü kısayolu oluşturan ve Denetim
+Masası'ndan kaldırılabilen bir `OyunCevirmenKur.exe` bulunabilir. Bu
+paketi kendiniz derlemek isterseniz bkz. [`installer/README.md`](installer/README.md).
+
 ## 1. Nasıl Başlatılır
 
 Kurulum tamamlandıktan sonra, en kolay yol: **Masaüstündeki "Oyun
@@ -73,15 +81,23 @@ Program açıldığında:
 |-----|-------|
 | **F9**  | Anlık mod: O anki ekranı bir kez tarar, bulduğu tüm yazıların Türkçe çevirisini üstlerine yazar. Tekrar F9'a basınca kapanır. |
 | **F10** | Canlı mod aç/kapat: Ekran sürekli izlenir, sadece *değişen* bölgeler yeniden okunup çevrilir. Diyalog kutuları, alt yazılar gibi değişen metinler için idealdir. |
+| **F8**  | Tam ekranı kaplayan bölge seçim katmanını açar: "dışında bırak" veya "sadece burayı oku" bölgeleri çizebilirsiniz (bkz. Bölüm 4.1). |
+| **F6**  | Basılı **tutulduğu sürece** çeviri kutularını gizler, orijinal oyun yazısını gösterir; bırakınca aynı çeviriler anında geri gelir (yeniden tarama yapılmaz). |
 | **F11** | Programı tamamen kapatır. |
 
-Bu kısayollar **global**'dir, yani oyun pencerede/odakta olsa da çalışır
-(düşük seviye klavye kancası kullanılır). Bazı anti-cheat sistemi agresif
-oyunlarda (örn. bazı rekabetçi oyunlar) bu tür global kancalar engellenebilir;
-bu durumda programı oyundan önce başlatmanız veya oyunu Borderless Windowed
-modda çalıştırmanız önerilir (bkz. aşağıdaki bölüm).
+Tüm bu kısayollar `config.json`'dan (veya Kısayollar sayfasından)
+değiştirilebilir (bkz. Bölüm 4). **Global**'dirler, yani oyun pencerede/
+odakta olsa da çalışır — biri değil, **iki ayrı kanaldan birden** dinlenir:
+`keyboard` kütüphanesinin düşük seviye klavye kancası VE Windows'un kendi
+`RegisterHotKey` API'si. Biri (örn. başka bir programın kancayla
+çakışması yüzünden) çalışmazsa diğeri bir şans daha sağlar.
 
-Kısayollar `config.json` dosyasından değiştirilebilir (bkz. Bölüm 4).
+**Oyun Yönetici olarak çalışıyorsa kısayollar çalışmayabilir.** Bu,
+Windows'un "Kullanıcı Arayüzü Ayrıcalık Yalıtımı" (UIPI) kuralından
+kaynaklanır: daha düşük yetkili bir program (bu program), daha yüksek
+yetkili bir pencereden (Yönetici olarak çalışan oyun) klavye olaylarını
+güvenilir şekilde alamaz. Çözüm: Gelişmiş sayfasındaki **"Yönetici
+olarak yeniden başlat"** düğmesiyle programı da aynı yetkiyle açın.
 
 ## 3. Neden Borderless Windowed Mod Gerekli?
 
@@ -123,38 +139,48 @@ boyutu ve konumu hatırlanır. Ctrl + 1…6 ile sayfalar arasında geçilir.
 
 - **Sahne:** Oyunda yakalanan son çeviri büyük perdede altyazı gibi
   belirir, orijinali altında görünür. Altındaki iki düğme Anında tara ve
-  Canlı modu fareyle açar/kapatır. Sağdaki **Akış**, oturum boyunca
-  çevrilen her satırı bir altyazı dosyasındaki gibi numarası ve zaman
-  koduyla listeler; satıra sağ tıklayıp kopyalayabilir, üstteki düğmeyle
-  tüm akışı `.srt` biçiminde panoya alabilirsiniz.
-- **Çeviri:** Yazı okuma (OCR) ve çeviri motoru, Ollama modeli, oyunun
-  dili. **Dene** bölümü, yazdığınız cümleyi seçili motorla çevirip süresini
-  gösterir. "Oyunun dili" Windows OCR içinse ve o dilin paketi kurulu
-  değilse, hemen altında bir uyarı ve kurulum yolu çıkar. **"Ollama
-  çalışmazsa Google'a gönder"** ayarı, Ollama kapalıyken ekrandaki
-  yazıların yedek olarak internete (Google Translate'e) gönderilip
-  gönderilmeyeceğini belirler — ilk ihtiyaç anında bir kez sorulur,
-  burada istediğiniz zaman değiştirebilirsiniz. Çeviri motoru olarak
-  zaten Google'ı seçtiyseniz bu ayar geçersizdir (zaten açıkça onay
-  vermişsinizdir).
+  Canlı modu fareyle açar/kapatır. Üstteki **profil çubuğu**, o an ön
+  planda hangi oyunun olduğunu gösterir ve o oyun için ayrı bir ayar
+  profili kaydedip yönetmenizi sağlar (bkz. Bölüm 4.1). Sağdaki **Akış**,
+  oturum boyunca çevrilen her satırı bir altyazı dosyasındaki gibi
+  numarası ve zaman koduyla listeler; satıra sağ tıklayıp kopyalayabilir
+  veya **"Çeviriyi düzelt…"** ile o satırın çevirisini kalıcı olarak
+  (motorlar tarafından bir daha asla ezilmeyecek şekilde) değiştirebilir,
+  üstteki düğmeyle tüm akışı `.srt` biçiminde panoya alabilirsiniz.
+- **Çeviri:** Yazı okuma (OCR — Windows OCR / EasyOCR / PaddleOCR /
+  RapidOCR) ve çeviri motoru (Ollama / Argos Translate / DeepL / Google
+  Translate, sıralamasıyla birlikte), Ollama modeli (ekran kartınıza göre
+  bir model önerilir, **"Modeli indir"** ile indirme ilerlemesi gösterilir),
+  oyunun dili. **Sözlük** bölümünde oyuna özgü karakter/yer/eşya adlarını
+  ekleyip (CSV olarak içe/dışa aktarabilirsiniz) motorların bu isimleri
+  her zaman aynı şekilde çevirmesini sağlayabilirsiniz. **Dene** bölümü,
+  yazdığınız cümleyi seçili motorla çevirip süresini gösterir. **"Ollama
+  çalışmazsa Google'a gönder"** ayarı üç durumludur (hiç sorulmadı / izin
+  verildi / izin verilmedi) ve yalnızca Google bir **yedek** motor olarak
+  devreye girecekse sorulur; motor olarak zaten Google'ı seçtiyseniz bu
+  ayar geçersizdir.
 - **Görünüm:** Çevirilerin oyunda nasıl duracağı. Üstteki küçük oyun
   sahnesi, oyundaki çizimin birebir aynısıdır; göz simgesine basılı
-  tutunca çeviriler kalkar ve orijinal oyun yazısını görürsünüz. Üç stil
-  vardır: **Kutu** (yarı saydam kutu), **Altyazı** (kutu yok; film
+  tutunca çeviriler kalkar ve orijinal oyun yazısını görürsünüz. Dört
+  stil vardır: **Kutu** (yarı saydam kutu), **Altyazı** (kutu yok; film
   altyazısı gibi kenarlı yazı, altındaki orijinali yumuşak bir gölgeyle
-  örter) ve **Şerit** (kenardan kenara koyu şerit). Yazı tipi, boyut,
-  koyuluk, renkler ve hazır renk takımları da buradadır.
+  örter), **Şerit** (kenardan kenara koyu şerit) ve **Altyazı şeridi**
+  (tüm çeviriler orijinal yazının üzerine değil, ekranın EN ALTINDA
+  birleşik tek bir satırda gösterilir — sinematik sahnelerde dağılmış
+  kutular yerine tek, okunaklı bir altyazı ister iseniz). Yazı tipi,
+  boyut, koyuluk, renkler ve hazır renk takımları da buradadır.
 - **Kısayollar:** "Değiştir"e tıklayıp yeni tuşa (veya Ctrl/Alt/Shift
   ile birleşimine) basın; Esc vazgeçer. Kayıt sırasında programın kendi
   kısayolları geçici olarak durur. Aynı tuş iki işe atanırsa uyarır.
-- **Gelişmiş:** Canlı mod tarama aralığı ve ekran bölmesi, filtreler,
-  **"Küçük yazıları büyüterek oku"** (okumadan önce görüntüyü 2 kat
-  büyütür, küçük fontlu yazılarda isabeti artırır; varsayılan açık, çok
-  büyük taramalarda otomatik devre dışı kalıp hızı korur), **izlenecek
-  ekran** (birden fazla monitörünüz varsa oyunun açık olduğu ekranı isme
-  göre seçersiniz; değişiklik anında uygulanır ve çeviriler artık
-  monitörün sanal masaüstündeki gerçek konumuna göre doğru yere çizilir),
-  çeviri hafızası, rehberi yeniden açma ve varsayılana dönme.
+- **Gelişmiş:** Canlı mod tarama aralığı ve ekran bölmesi, harf-harf
+  beliren diyalog bekleme süresi, filtreler, **"Küçük yazıları büyüterek
+  oku"**, **"Kontrastı güçlendir"** (açık renk üzerine açık renk yazılar
+  için CLAHE ile kontrast artırma), **Kaynak tasarrufu** (oyun arka
+  plandayken/bilgisayar boştayken canlı modu duraklatma, büyük sahne
+  geçişlerini OCR'a göndermeme), **izlenecek ekran**, **okuma bölgeleri**
+  (bkz. Bölüm 4.2), çeviri hafızası, **Sorun giderme** (Yönetici olarak
+  yeniden başlatma, sorun bildirimi paketi — bkz. Bölüm 4.4), sürüm
+  numarası, rehberi yeniden açma ve varsayılana dönme.
 - **Günlük:** Programın kayıtları; uyarılar sarı, hatalar kırmızı.
   Yalnızca uyarıları veya hataları süzebilir, kopyalayabilirsiniz.
 
@@ -164,6 +190,67 @@ durum göstergesi açar. Sürükleyip istediğiniz yere taşıyın; yeri
 hatırlanır. Üzerindeki iki düğme Anında tara ve Canlı modu açar, son
 çeviri tek satır olarak görünür. Mini panel ekran yakalamalarına
 görünmez, yani program onu okuyup çevirmeye çalışmaz.
+
+### 4.1 Oyun Profilleri
+
+Program, o an **ön planda olan pencerenin `.exe` adına** göre otomatik
+olarak ayrı bir profil uygulayabilir: OCR motoru/dili, overlay stili,
+okuma bölgeleri ve sözlük oyundan oyuna değişebilir. Sahne sayfasındaki
+profil çubuğundan:
+- O an tespit edilen oyunu görürsünüz ("Oyun tespit edilemedi" ise
+  program/pencere öne alınamamış demektir).
+- **"Profili kaydet"** ile o oyun için SU ANKI ayarlarınızı bir profil
+  olarak kaydedersiniz; aynı oyuna her dönüşünüzde bu ayarlar otomatik
+  uygulanır (genel ayarlarınız etkilenmez, siz başka bir oyuna veya
+  masaüstüne geçtiğinizde genel ayarlarınıza geri dönülür).
+- Profil varken **"Profili güncelle"**ye dönüşür — o oyundayken yaptığınız
+  yeni ayar değişikliklerini profile kaydetmek için tekrar tıklayın.
+- **"Profili sil"** o oyun için profili kaldırır, genel ayarlara döner.
+- **"Profiller açık/kapalı"** tüm profil özelliğini (profilleri SİLMEDEN)
+  geçici olarak devre dışı bırakır.
+
+### 4.2 Okuma Bölgeleri ("Dışında Bırak" / "Sadece Burayı Oku")
+
+Gelişmiş sayfasındaki **"Bölge çiz"** düğmesi veya **F8** kısayolu, tam
+ekranı kaplayan yarı saydam bir seçim katmanı açar. Fare ile sürükleyerek
+dikdörtgenler çizebilir, her birini **"Dışında bırak"** (o bölge hiç
+okunmaz — örn. sabit bir HUD/sohbet kutusu) veya **"Sadece burayı oku"**
+(işaretlenmişse SADECE o bölge(ler) okunur, geri kalanı yok sayılır)
+olarak işaretleyebilirsiniz. **Enter** ile kaydedip kapatır, **Esc** ile
+vazgeçersiniz (hiçbir şey kaydedilmez). Bu bölgeler oyun profilleriyle
+birlikte de kaydedilebilir (Bölüm 4.1).
+
+### 4.3 Büyük Altyazı Penceresi (İkinci Monitör)
+
+Bazı oyunlar **Tam Ekran Özel (Exclusive Fullscreen)** modda çalışır ve
+bu durumda normal overlay penceresi oyunun ÜSTÜNE ÇIKAMAZ (Windows'un
+kendi sınırlamasıdır, Bölüm 3'e bakın). Çözüm: üst banttaki ikinci monitör
+simgesi (veya tepsi menüsündeki "Büyük altyazı penceresini göster") ile
+büyük, okunaklı bir altyazı penceresi açılır — varsayılan olarak ikinci
+bir monitörünüz varsa oraya, yoksa birincil ekranın alt kısmına konur.
+Sürükleyip istediğiniz yere taşıyabilirsiniz; yeri hatırlanır. Oyunu
+birinci monitörde tam ekran oynarken göz ucuyla ikinci monitöre
+bakarak çeviriyi takip edebilirsiniz.
+
+### 4.4 Sorun Giderme ve Sorun Bildirimi
+
+Gelişmiş sayfasındaki **"Sorun giderme"** bölümünde iki araç bulunur:
+- **"Yönetici olarak yeniden başlat":** Kısayollar oyunda çalışmıyorsa
+  (bkz. Bölüm 2), programı Yönetici izniyle yeniden başlatır.
+- **"Paket oluştur (Masaüstüne)":** Son günlükleri, ayarlarınızı (API
+  anahtarları gizlenmiş hâliyle) ve sistem bilgisini (Windows sürümü,
+  ekran kartı, ekran düzeni, kurulu OCR dilleri, Ollama modelleri) tek
+  bir `.zip` dosyasında Masaüstüne kaydeder — bir sorunu bildirirken bu
+  dosyayı paylaşmanız yeterlidir. İsteğe bağlı olarak bir ekran görüntüsü
+  de eklenebilir (varsayılan kapalı).
+
+### 4.5 Sürüm Kontrolü
+
+Program her açılışta (en fazla **günde bir kez**) GitHub'da yayınlanmış
+en son sürüme bakar. Daha yeni bir sürüm varsa kontrol panelinin alt
+bandındaki **"Sürüm"** alanında ve sistem tepsisi bildirimiyle haber
+verilir. İnternet yoksa veya henüz hiç sürüm yayınlanmamışsa sessizce
+hiçbir şey göstermez (hataya yol açmaz).
 
 Değişikliklerin neredeyse tamamı **anında** uygulanır ve otomatik olarak
 `config.json` dosyasına kaydedilir — ayrıca kaydetmeniz gerekmez.
@@ -199,6 +286,16 @@ gerekir.
   kullanılmaktadır. Paddle'ın Blackwell desteği ileride gelirse,
   `pip install paddlepaddle-gpu paddleocr` ile yeniden kurup
   `config.json`'da `ocr_engine` alanını güncelleyebilirsiniz.
+- **RapidOCR** (`onnxruntime-directml`): GPU üreticisinden bağımsız
+  (NVIDIA/AMD/Intel fark etmez) bir GPU hızlandırmalı alternatiftir;
+  isteğe bağlı kurulur (`pip install rapidocr-onnxruntime`), kurulu
+  değilse program sessizce Windows OCR'a döner.
+
+Küçük yazılar (örn. "Press E" gibi kısa etkileşim ipuçları), hangi
+motoru kullanırsanız kullanın, okunmadan önce otomatik olarak büyütülüp
+yeniden okunur — bu, hem canlı modda hem de F9 anlık taramasında
+(ekranın yalnızca küçük yazılı bölgeleri tek tek kırpılıp büyütülerek)
+çalışır.
 
 - **Ollama** (`aya-expanse:8b`): Cohere'in çok dilli (23+ dil, Türkçe dahil)
   olarak özel eğitilmiş modelidir. Oyun metinleri için kısa ve doğal Türkçe
@@ -213,6 +310,14 @@ gerekir.
   olarak net şekilde görünür; Çeviri sayfasından istediğiniz zaman
   açıp kapatabilirsiniz. Çeviri motoru olarak zaten "Google Translate"i
   seçtiyseniz bu soru hiç sorulmaz. İnternet bağlantısı gerektirir.
+- **Argos Translate** (çevrimdışı, isteğe bağlı): İnternet olmadan da
+  çalışan ikinci bir yedek motordur; kurulu değilse sessizce atlanır.
+- **DeepL** (bulut, isteğe bağlı): Ücretsiz bir API anahtarı
+  (deepl.com/pro-api) girerseniz kullanılabilir hale gelir.
+
+Hangi motorların, hangi SIRAYLA denenceği (örn. Ollama → Argos →
+Google) Çeviri sayfasından yapılandırılabilir; kurulu/yapılandırılmamış
+bir motor (örn. API anahtarı boşsa DeepL) otomatik atlanır.
 
 Çeviriler hem bellekte hem de `cache\translations.sqlite3` dosyasında
 önbelleğe alınır; aynı metin tekrar görüldüğünde yeniden çeviri
@@ -289,40 +394,75 @@ geçmiyor**
   o dile ayarlayın; program o zaman sadece Türkçeye kesin özgü harfler
   (ğ, ı, ş) görürse metni atlar, aksi halde çevirir.
 
+**Oyun Yönetici olarak çalışıyor ve hiçbir kısayol (F9/F10/F8/F6)
+çalışmıyor**
+- Bu, Windows'un kendi güvenlik kuralından (UIPI) kaynaklanır: daha
+  düşük yetkili bir program, daha yüksek yetkili bir pencereden klavye
+  olaylarını güvenilir şekilde alamaz. Gelişmiş sayfasındaki **"Yönetici
+  olarak yeniden başlat"** düğmesiyle programı da aynı yetkiyle açın.
+
+**Canlı mod aniden duruyor/hiç tepki vermiyor gibi görünüyor**
+- Bu BEKLENEN bir davranış olabilir: "Kaynak tasarrufu" özelliği, oyun
+  penceresi arka plana alındığında veya bilgisayar bir süre boşta
+  kaldığında canlı modu GEÇİCİ olarak duraklatır (ekranı hiç
+  yakalamaz); oyuna/pencereye geri dönünce otomatik devam eder. Bu
+  davranışı Gelişmiş sayfasından kapatabilirsiniz.
+
+**Bir sinematik/sahne geçişi sırasında çeviriler kısa süreliğine kayboluyor**
+- Ekranın büyük bölümü (%60 ve üzeri) birden değişirse, program bunu
+  muhtemelen bir sinematik/sahne geçişi sayıp o kareyi hiç çevirmeye
+  göndermez (anlamsız/yarım çevirilerin yanıp sönmesini önlemek için).
+  Bu davranış Gelişmiş sayfasından kapatılabilir.
+
 ## 7. Klasör Yapısı (bilgi amaçlı)
 
 ```
 C:\OyunCevirmen\
 ├── app\
-│   ├── main.py            (ana orkestrasyon, kısayollar, modlar)
-│   ├── config.py           (ayarlar: config.json okuma/yazma)
+│   ├── __init__.py          (__version__ - surum numarasi)
+│   ├── main.py               (ana orkestrasyon, kisayollar, modlar)
+│   ├── config.py              (ayarlar: config.json okuma/yazma)
 │   ├── core\
-│   │   ├── capture.py       (dxcam/mss ekran yakalama)
-│   │   ├── ocr.py           (Windows OCR / EasyOCR / PaddleOCR)
-│   │   ├── translate.py     (Ollama + Google Translate, sistem talimatı)
-│   │   ├── overlay.py        (PyQt6 seffaf/clickthrough pencere)
-│   │   ├── cache.py          (bellek + SQLite ceviri onbellegi)
-│   │   ├── textfilter.py     (akilli filtreleme kurallari)
-│   │   ├── hotkeys.py        (F9/F10/F11 global kisayollar)
-│   │   └── tray.py           (sistem tepsisi simgesi/menusu)
+│   │   ├── capture.py          (dxcam/mss ekran yakalama + monitor kimligi)
+│   │   ├── ocr.py               (Windows OCR / EasyOCR / PaddleOCR / RapidOCR)
+│   │   ├── translate.py          (Ollama / Argos / DeepL / Google Translate)
+│   │   ├── glossary.py            (oyun sozlugu)
+│   │   ├── overlay.py              (PyQt6 seffaf/clickthrough pencere, 4 stil)
+│   │   ├── cache.py                 (bellek + SQLite ceviri onbellegi)
+│   │   ├── textfilter.py             (akilli filtreleme kurallari)
+│   │   ├── hotkeys.py                 (global kisayollar: keyboard + Win32)
+│   │   ├── winhotkey.py                (Win32 RegisterHotKey + Yonetici yeniden baslatma)
+│   │   ├── activity.py                  (on plan penceresi/bosta kalma tespiti)
+│   │   ├── profiles.py                   (oyun bazli profiller)
+│   │   ├── regions.py                     (okuma bolgesi karari)
+│   │   ├── hardware.py                     (GPU'ya gore model onerisi)
+│   │   ├── diagnostics.py                   (sorun bildirimi paketi)
+│   │   ├── update.py                        (GitHub Releases surum kontrolu)
+│   │   └── tray.py                           (sistem tepsisi simgesi/menusu)
 │   ├── ui\
 │   │   ├── theme.py          (renkler, yazi tipleri, stil sayfasi)
 │   │   ├── frame.py          (ozel pencere cercevesi)
 │   │   ├── mainwindow.py     (kontrol paneli)
 │   │   ├── onboarding.py     (ilk acilis rehberi)
 │   │   ├── minipanel.py      (oyun ici mini panel)
+│   │   ├── bigsubtitle.py    (ikinci monitorde buyuk altyazi penceresi)
+│   │   ├── regionoverlay.py  (F8 bolge secici tam ekran katmani)
 │   │   ├── widgets.py, icons.py, logo.py
 │   │   └── pages\           (Sahne, Ceviri, Gorunum, Kisayollar, Gelismis, Gunluk)
 │   └── assets\icon.png, icon.ico, fonts\
+├── installer\                 (PyInstaller + Inno Setup kurulum paketi tarifi)
+├── .github\workflows\          (pytest + surum yayinlama is akislari)
 ├── venv\                     (Python sanal ortami)
 ├── cache\translations.sqlite3
 ├── logs\oyuncevirmen.log
 ├── config.json               (ilk calistirmada otomatik olusur)
+├── glossary.json              (oyun sozlugu, ilk kullanimda olusur)
 ├── OyunCevirmenBaslat.bat     (programi baslatir)
 ├── Kurulum.bat                (sifirdan kurulum - bkz. Bolum 0)
 ├── kurulum.ps1
 ├── Guncelle.bat                (GitHub'daki guncellemeyi ceker)
 ├── guncelle.ps1
+├── tools\test_pencere.py       (elle hotkey/overlay testi - pytest DEGIL)
 ├── tests\                      (pytest testleri - gercek ekran/Ollama gerektirmez)
 ├── pytest.ini
 └── KULLANIM.md                (bu dosya)
