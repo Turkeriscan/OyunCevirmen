@@ -73,6 +73,7 @@ def test_stale_generation_translation_not_shown_but_remembered():
     fake = _FakeOrchestrator(translate_fn=slow_translate)
     cell_boxes = {}
     cell_lock = threading.Lock()
+    cell_growth = {}
     cell_generation = {0: 1}  # hucre 0 su an nesil 1'de
 
     fake._submit_live_translation(
@@ -99,6 +100,7 @@ def test_matching_generation_translation_is_shown():
     fake = _FakeOrchestrator(translate_fn=lambda *a, **k: "Merhaba Dunya")
     cell_boxes = {}
     cell_lock = threading.Lock()
+    cell_growth = {}
     cell_generation = {0: 1}
 
     fake._submit_live_translation(
@@ -115,6 +117,7 @@ def test_failed_translation_does_not_remember_or_show():
     fake = _FakeOrchestrator(translate_fn=lambda *a, **k: None)
     cell_boxes = {}
     cell_lock = threading.Lock()
+    cell_growth = {}
     cell_generation = {0: 1}
 
     fake._submit_live_translation(
@@ -134,11 +137,12 @@ def test_cache_hit_remembers_new_text_in_cell():
     cell_boxes = {}
     cell_last_texts = {}
     cell_lock = threading.Lock()
+    cell_growth = {}
     cell_generation = {0: 1}
 
     cached_boxes, hits, pending = fake._live_process_cell(
         0, [_fake_result("Hello")], "auto", "tr", "ollama", None,
-        1, cell_generation, cell_boxes, cell_last_texts, cell_lock,
+        1, cell_generation, cell_boxes, cell_last_texts, cell_lock, cell_growth,
     )
 
     assert hits == 1 and pending == 0
@@ -154,12 +158,13 @@ def test_cache_hit_does_not_reremember_unchanged_text_in_same_cell():
     cell_boxes = {}
     cell_last_texts = {}
     cell_lock = threading.Lock()
+    cell_growth = {}
     cell_generation = {0: 1}
 
     # Birinci tarama: "Hello" bu hucrede YENI -> hatirlanir
     fake._live_process_cell(
         0, [_fake_result("Hello")], "auto", "tr", "ollama", None,
-        1, cell_generation, cell_boxes, cell_last_texts, cell_lock,
+        1, cell_generation, cell_boxes, cell_last_texts, cell_lock, cell_growth,
     )
     assert len(fake.recent) == 1
     first_entry_time = fake.recent[0][0]
@@ -167,7 +172,7 @@ def test_cache_hit_does_not_reremember_unchanged_text_in_same_cell():
     # Ikinci tarama: AYNI hucre, AYNI metin tekrar geldi (sinyal titremesi)
     fake._live_process_cell(
         0, [_fake_result("Hello")], "auto", "tr", "ollama", None,
-        2, cell_generation, cell_boxes, cell_last_texts, cell_lock,
+        2, cell_generation, cell_boxes, cell_last_texts, cell_lock, cell_growth,
     )
     # Akista hala TEK kayit olmali, zaman damgasi degismemeli
     assert len(fake.recent) == 1
@@ -181,17 +186,18 @@ def test_cache_hit_remembers_when_text_changes_in_same_cell():
     cell_boxes = {}
     cell_last_texts = {}
     cell_lock = threading.Lock()
+    cell_growth = {}
     cell_generation = {0: 1}
 
     fake.translator.cache.get.return_value = "Merhaba"
     fake._live_process_cell(
         0, [_fake_result("Hello")], "auto", "tr", "ollama", None,
-        1, cell_generation, cell_boxes, cell_last_texts, cell_lock,
+        1, cell_generation, cell_boxes, cell_last_texts, cell_lock, cell_growth,
     )
     fake.translator.cache.get.return_value = "Gule gule"
     fake._live_process_cell(
         0, [_fake_result("Bye")], "auto", "tr", "ollama", None,
-        2, cell_generation, cell_boxes, cell_last_texts, cell_lock,
+        2, cell_generation, cell_boxes, cell_last_texts, cell_lock, cell_growth,
     )
 
     assert len(fake.recent) == 2
@@ -206,15 +212,16 @@ def test_cache_hit_remembers_same_text_reappearing_in_different_cell():
     cell_boxes = {}
     cell_last_texts = {}
     cell_lock = threading.Lock()
+    cell_growth = {}
     cell_generation = {0: 1, 1: 1}
 
     fake._live_process_cell(
         0, [_fake_result("Hello")], "auto", "tr", "ollama", None,
-        1, cell_generation, cell_boxes, cell_last_texts, cell_lock,
+        1, cell_generation, cell_boxes, cell_last_texts, cell_lock, cell_growth,
     )
     fake._live_process_cell(
         1, [_fake_result("Hello")], "auto", "tr", "ollama", None,
-        1, cell_generation, cell_boxes, cell_last_texts, cell_lock,
+        1, cell_generation, cell_boxes, cell_last_texts, cell_lock, cell_growth,
     )
 
     # _remember kendi ici tekillestirir (ayni metin tek kayit olarak kalir)

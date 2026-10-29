@@ -139,6 +139,28 @@ def _rects_overlap(rect_a, rect_b, threshold=0.4):
     return (inter_area / min_area) >= threshold
 
 
+def _typewriter_check(prev_state, text, now, debounce_seconds):
+    """Harf harf beliren diyalog (typewriter efekti) icin: bir metin
+    ONCEKI taramadakinin DEVAMIYSA (onceki metin, yenisinin basiyla
+    AYNI), cevirmeyi metin en az debounce_seconds kadar DEGISMEDEN
+    kalana kadar geciktirir - aksi halde "H", "He", "Hel", "Hello" gibi
+    her ara durum ayri ayri (ve gereksiz yere) cevrilirdi.
+
+    Hic buyume GOZLENMEMIS (statik/tek seferde beliren) bir metin HIC
+    GECIKTIRILMEZ - sadece gercekten "buyudugu" gozlenen bir metin
+    icin bu bekleme devreye girer.
+
+    (defer, yeni_durum) dondurur: defer=True ise bu turda metni
+    CEVIRME/ONBELLEGE BAKMA, yeni_durum'u sakla ve devam et."""
+    if prev_state is not None and prev_state["text"] != text and text.startswith(prev_state["text"]):
+        return True, {"text": text, "stable_since": now, "growing": True}
+    if prev_state is not None and prev_state.get("growing") and prev_state["text"] == text:
+        if now - prev_state["stable_since"] < debounce_seconds:
+            return True, prev_state
+        return False, {"text": text, "stable_since": prev_state["stable_since"], "growing": False}
+    return False, {"text": text, "stable_since": now, "growing": False}
+
+
 class AppBridge(QtCore.QObject):
     quit_signal = QtCore.pyqtSignal()
     show_window_signal = QtCore.pyqtSignal()
@@ -339,6 +361,9 @@ class Orchestrator:
         # degistirdigi icin gercekte yazi degismedigi halde yeniden okunursa)
         # akisi (_remember) tekrar tekrar en uste tasimamak icin kullanilir.
         cell_last_texts = {}
+        # Harf harf beliren diyalog (typewriter efekti) icin buyume takibi
+        # (bkz. _typewriter_check): idx -> {"text","stable_since","growing"}.
+        cell_growth = {}
         cell_lock = threading.Lock()
         grid = None
         frame_h = frame_w = None
@@ -398,7 +423,7 @@ class Orchestrator:
                 cached_boxes, cache_hits, pending = self._live_process_cell(
                     idx, survivors, source_lang, target_lang, engine_pref,
                     context_lines, generation, cell_generation, cell_boxes,
-                    cell_last_texts, cell_lock,
+                    cell_last_texts, cell_lock, cell_growth,
                 )
                 tick_cache_hits += cache_hits
                 tick_pending += pending
@@ -425,7 +450,7 @@ class Orchestrator:
 
     def _live_process_cell(self, idx, survivors, source_lang, target_lang, engine_pref,
                             context_lines, generation, cell_generation, cell_boxes,
-                            cell_last_texts, cell_lock):
+                            cell_last_texts, cell_lock, cell_growth):
         """Bir hucrenin OCR sonuclarini isler: onbellekten bulunanlar hemen
         kutu listesine eklenir, bulunamayanlar arka planda cevrilmeye
         yollanir (bkz. _submit_live_translation). Donen deger:
@@ -435,14 +460,27 @@ class Orchestrator:
         ogesi titreyip sinyali degistirdigi icin yazi degismedigi halde
         yeniden okunduysa), akis (_remember) tekrar tekrar en uste
         tasinmaz - zaman kodu sadece metin bu hucrede YENI belirdiginde
-        guncellenir."""
+        guncellenir.
+
+        Harf harf beliren diyalog (typewriter efekti) icin: metnin
+        BUYUDUGU gozlenirse (bkz. _typewriter_check), metin en az
+        "live_typewriter_debounce_ms" kadar DEGISMEDEN kalana kadar
+        cevrilmez - ara durumlar ("H", "He", "Hel"...) bosa cevrilmez."""
         prev_texts = cell_last_texts.get(idx, set())
         cell_last_texts[idx] = {res.text for res in survivors}
+
+        debounce_seconds = max(0, int(self.config.get("live_typewriter_debounce_ms", 400))) / 1000.0
+        now = time.time()
 
         cached_boxes = []
         cache_hits = 0
         pending = 0
         for res in survivors:
+            if debounce_seconds > 0:
+                defer, new_state = _typewriter_check(cell_growth.get(idx), res.text, now, debounce_seconds)
+                cell_growth[idx] = new_state
+                if defer:
+                    continue
             cached = self.translator.cache.get(res.text, source_lang, target_lang, engine_pref)
             if cached is not None:
                 cache_hits += 1

@@ -43,6 +43,10 @@ DEFAULT_CONFIG = {
     # Hucreler kirpilirken sinirlarin disina tasan pay (piksel). Bir kelime
     # tam hucre sinirina denk gelirse ikiye bolunup yanlis okunmasini onler.
     "live_cell_padding": 220,
+    # Harf harf beliren diyalog (typewriter efekti): bir metnin "buyudugu"
+    # (onceki taramadakinin devami oldugu) gozlenirse, bu kadar milisaniye
+    # DEGISMEDEN kalana kadar cevrilmez - ara durumlar bosa cevrilmesin.
+    "live_typewriter_debounce_ms": 400,
     # Akıllı filtreleme eşikleri
     "min_text_length": 2,
     "min_ocr_confidence": 0.45,

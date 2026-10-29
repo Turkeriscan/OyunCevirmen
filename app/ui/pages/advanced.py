@@ -29,6 +29,11 @@ class AdvancedPage(Page):
         g.row("Ekran bölmesi", "Ekran bu kadar parçaya bölünür; sadece değişen parçalar yeniden okunur.", grid)
         self.st_padding = Stepper(0, 300, 10, "px")
         g.row("Parça kenar payı", "Kelimeler parça sınırında bölünüyorsa artır.", self.st_padding)
+        self.st_typewriter = Stepper(0, 2000, 50, "ms")
+        g.row("Harf harf beliren yazı bekleme süresi",
+              "Diyalog harf harf beliren oyunlarda, yazı bu kadar süre değişmeden "
+              "kalana kadar çevirmeyi geciktirir. 0 = kapalı.",
+              self.st_typewriter)
         self.body.addWidget(g)
 
         self.body.addSpacing(px(10))
@@ -87,7 +92,8 @@ class AdvancedPage(Page):
 
         self.sl_interval.valueChanged.connect(ctx.schedule_save)
         self.sl_conf.valueChanged.connect(ctx.schedule_save)
-        for s in (self.st_cols, self.st_rows, self.st_padding, self.st_minlen, self.st_cache):
+        for s in (self.st_cols, self.st_rows, self.st_padding, self.st_minlen, self.st_cache,
+                  self.st_typewriter):
             s.valueChanged.connect(ctx.schedule_save)
         self.combo_upscale.currentIndexChanged.connect(ctx.schedule_save)
         self.combo_monitor.currentIndexChanged.connect(self._monitor_changed)
@@ -124,6 +130,7 @@ class AdvancedPage(Page):
         self.st_cols.setValue(cfg.get("live_grid_cols", 6), emit=False)
         self.st_rows.setValue(cfg.get("live_grid_rows", 4), emit=False)
         self.st_padding.setValue(cfg.get("live_cell_padding", 220), emit=False)
+        self.st_typewriter.setValue(cfg.get("live_typewriter_debounce_ms", 400), emit=False)
         self.st_minlen.setValue(cfg.get("min_text_length", 2), emit=False)
         self.sl_conf.setValue(cfg.get("min_ocr_confidence", 0.45))
         self.st_cache.setValue(cfg.get("max_cache_memory_items", 5000), emit=False)
@@ -136,6 +143,7 @@ class AdvancedPage(Page):
         cfg["live_grid_cols"] = self.st_cols.value()
         cfg["live_grid_rows"] = self.st_rows.value()
         cfg["live_cell_padding"] = self.st_padding.value()
+        cfg["live_typewriter_debounce_ms"] = self.st_typewriter.value()
         cfg["min_text_length"] = self.st_minlen.value()
         cfg["min_ocr_confidence"] = round(self.sl_conf.value(), 2)
         cfg["max_cache_memory_items"] = self.st_cache.value()
