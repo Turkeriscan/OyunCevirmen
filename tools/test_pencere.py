@@ -5,7 +5,12 @@ kaldigi surece, Oyun Cevirmen programinin F9/F10 ile bu yazilari
 bulup Turkceye cevirip ustune yazmasi beklenir.
 
 Kullanim:
-    venv\\Scripts\\python.exe tests\\test_pencere.py
+    venv\\Scripts\\python.exe tools\\test_pencere.py
+
+Not: Bu dosya elle calistirilan bir ARAC'tir, otomatik bir test degildir;
+bu yuzden tests/ klasoru DEGIL tools/ klasorunde durur (adi "test_" ile
+baslasaydi pytest onu toplamaya calisir, tkinter'siz bir ortamda tum
+test oturumunu bozardi).
 """
 import tkinter as tk
 
