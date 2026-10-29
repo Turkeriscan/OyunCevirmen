@@ -248,5 +248,18 @@ class TranslationManager:
                     result = None
 
         if result:
-            self.cache.set(text, source_lang, target_lang, used_engine, result)
+            # ONEMLI: onbellek anahtari HER ZAMAN kullanicinin SECTIGI motor
+            # (engine_pref) ile yazilir - sonucu GERCEKTE hangi motorun
+            # urettigi (used_engine) degil. Aksi halde yedek motordan gelen
+            # bir sonuc "google" anahtariyla kaydedilir, ama her arama hala
+            # "ollama" anahtariyla yapildigi icin BIR DAHA HIC BULUNAMAZ -
+            # ayni satir her seferinde yeniden (basarisiz) Ollama'ya gidip
+            # tekrar Google'a duserdi. used_engine != engine_pref ise bu
+            # kayit "yedekten geldi" (is_fallback) isaretlenir ve bir sure
+            # sonra suresi dolar: tercih edilen motor (orn. Ollama) duzelince
+            # ayni satir tekrar geldiginde ona yeniden bir sans verilir.
+            self.cache.set(
+                text, source_lang, target_lang, engine_pref, result,
+                is_fallback=(used_engine != engine_pref),
+            )
         return result

@@ -144,3 +144,106 @@ def test_hallucination_guard_still_works_with_context_param():
     long_fake = "Bu çok uzun ve alakasız bir açıklama metni " * 5
     assert translate._looks_like_hallucination("Hi", long_fake)
     assert not translate._looks_like_hallucination("Hi", "Merhaba")
+
+
+# ------------------------------------------- 1.4: yedek sonucu tekrar bulunabilmeli
+def test_google_fallback_result_is_cached_under_primary_engine_key(tmp_path):
+    """Ollama basarisiz olup Google yedegine dusuldugunde, sonuc GELECEKTEKI
+    aramalarin kullanacagi anahtarla (engine_pref='ollama') kaydedilmeli -
+    eskiden 'google' anahtariyla kaydedildigi icin ayni satir HER SEFERINDE
+    once basarisiz Ollama'ya gidip tekrar Google'a duserdi."""
+    from app.core import cache as cache_mod
+
+    config = {
+        "translate_engine": "ollama", "ollama_host": "http://127.0.0.1:11434",
+        "ollama_model": "test-model", "source_lang": "auto", "target_lang": "tr",
+        "max_cache_memory_items": 100, "allow_google_fallback": True,
+    }
+    manager = translate.TranslationManager(config)
+    manager.cache = cache_mod.TranslationCache(
+        max_memory_items=100, db_path=str(tmp_path / "fallback_cache.sqlite3")
+    )
+
+    ollama_calls = {"n": 0}
+    google_calls = {"n": 0}
+
+    def ollama_fails(self, text, source_lang="auto", target_lang="tr", model=None, context_lines=None):
+        ollama_calls["n"] += 1
+        return None  # Ollama cevap vermiyor
+
+    def google_succeeds(self, text, source_lang="auto", target_lang="tr"):
+        google_calls["n"] += 1
+        return "Merhaba Dunya"
+
+    with patch.object(translate.OllamaTranslator, "translate", ollama_fails), \
+         patch.object(translate.GoogleFallbackTranslator, "translate", google_succeeds):
+        first = manager.translate("Hello World")
+        second = manager.translate("Hello World")  # AYNI metin tekrar geldi
+
+    assert first == second == "Merhaba Dunya"
+    # Ikinci cagri onbellekten gelmeli - Ollama'ya VE Google'a TEKRAR gidilmemeli
+    assert ollama_calls["n"] == 1
+    assert google_calls["n"] == 1
+
+    # Kayit, kullanicinin SECTIGI motor anahtariyla (ollama) bulunabilir olmali
+    cached = manager.cache.get("Hello World", "auto", "tr", "ollama")
+    assert cached == "Merhaba Dunya"
+
+
+def test_fallback_cache_entry_is_marked_and_expires_allowing_ollama_retry(tmp_path):
+    """Yedekten gelen kayit suresi dolunca, Ollama duzelmisse YENI (ve bu
+    kez Ollama'dan gelen) bir ceviri uretilebilmeli."""
+    from app.core import cache as cache_mod
+
+    config = {
+        "translate_engine": "ollama", "ollama_host": "http://127.0.0.1:11434",
+        "ollama_model": "test-model", "source_lang": "auto", "target_lang": "tr",
+        "max_cache_memory_items": 100, "allow_google_fallback": True,
+    }
+    manager = translate.TranslationManager(config)
+    manager.cache = cache_mod.TranslationCache(
+        max_memory_items=100, db_path=str(tmp_path / "fallback_cache2.sqlite3")
+    )
+
+    with patch.object(translate.OllamaTranslator, "translate", lambda *a, **k: None), \
+         patch.object(translate.GoogleFallbackTranslator, "translate", lambda *a, **k: "Google cevirisi"):
+        manager.translate("Hello Again")
+
+    key = cache_mod._make_key("Hello Again", "auto", "tr", "ollama")
+    text, is_fallback, created = manager.cache._mem[key]
+    assert is_fallback is True
+    # Suresini (hem bellekte hem diskte, gercek yaslanmayla tutarli olacak
+    # sekilde) simule olarak doldur.
+    manager.cache._mem[key] = (text, is_fallback, created - cache_mod.FALLBACK_TTL_SECONDS - 1)
+    manager.cache._conn.execute(
+        "UPDATE translations SET created_at = ? WHERE key = ?", ("2000-01-01 00:00:00", key)
+    )
+    manager.cache._conn.commit()
+
+    with patch.object(translate.OllamaTranslator, "translate", lambda *a, **k: "Ollama cevirisi"):
+        result = manager.translate("Hello Again")
+
+    assert result == "Ollama cevirisi"  # Ollama duzeldi, yeniden denendi ve kazandi
+
+
+def test_non_fallback_result_cached_without_fallback_flag(tmp_path):
+    """Ollama DOGRUDAN basarili olursa, kayit yedek isaretli olmamali
+    (suresiz gecerli kalmali)."""
+    from app.core import cache as cache_mod
+
+    config = {
+        "translate_engine": "ollama", "ollama_host": "http://127.0.0.1:11434",
+        "ollama_model": "test-model", "source_lang": "auto", "target_lang": "tr",
+        "max_cache_memory_items": 100,
+    }
+    manager = translate.TranslationManager(config)
+    manager.cache = cache_mod.TranslationCache(
+        max_memory_items=100, db_path=str(tmp_path / "normal_cache.sqlite3")
+    )
+
+    with patch.object(translate.OllamaTranslator, "translate", lambda *a, **k: "Merhaba"):
+        manager.translate("Hi")
+
+    key = cache_mod._make_key("Hi", "auto", "tr", "ollama")
+    _text, is_fallback, _created = manager.cache._mem[key]
+    assert is_fallback is False
