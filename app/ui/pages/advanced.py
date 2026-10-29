@@ -102,6 +102,24 @@ class AdvancedPage(Page):
         self.body.addWidget(g3)
 
         self.body.addSpacing(px(10))
+        self.body.addWidget(section_header("Okuma bölgeleri"))
+        g5 = SettingsGroup()
+        regions = QtWidgets.QHBoxLayout()
+        regions.setSpacing(px(10))
+        self.lbl_regions = label("", "ValueLabel")
+        self.btn_draw_regions = text_button("Bölge çiz")
+        self.btn_draw_regions.clicked.connect(ctx.orchestrator.request_open_region_selector)
+        self.btn_clear_regions = text_button("Bölgeleri temizle", "Danger")
+        self.btn_clear_regions.clicked.connect(self._clear_regions)
+        regions.addWidget(self.lbl_regions)
+        regions.addSpacing(px(10))
+        regions.addWidget(self.btn_draw_regions)
+        regions.addWidget(self.btn_clear_regions)
+        g5.row("Dışında bırak / sadece burayı oku", "Ekranda hiç okunmasını istemediğin ya da "
+               "sadece okunmasını istediğin bölgeleri (örn. sohbet kutusu) işaretle.", regions)
+        self.body.addWidget(g5)
+
+        self.body.addSpacing(px(10))
         self.body.addWidget(section_header("Başa dön"))
         g4 = SettingsGroup()
         b1 = text_button("Rehberi aç")
@@ -150,6 +168,21 @@ class AdvancedPage(Page):
         self.lbl_cache.setText("?" if n is None else f"{n:,} çeviri".replace(",", "."))
         self.btn_clear.setEnabled(bool(n))
 
+    def _clear_regions(self):
+        self.ctx.config["exclude_regions"] = []
+        self.ctx.config["include_regions"] = []
+        self.ctx.schedule_save()
+        self._refresh_region_label()
+        self.ctx.flash("Okuma bölgeleri temizlendi")
+
+    def _refresh_region_label(self):
+        exclude_n = len(self.ctx.config.get("exclude_regions") or [])
+        include_n = len(self.ctx.config.get("include_regions") or [])
+        if not exclude_n and not include_n:
+            self.lbl_regions.setText("Bölge yok")
+        else:
+            self.lbl_regions.setText(f"{exclude_n} dışında, {include_n} sadece-oku")
+
     # ---------------------------------------------------------- ayarlar
     def load(self, cfg):
         self.sl_interval.setValue(cfg.get("live_scan_interval", 0.45))
@@ -168,6 +201,7 @@ class AdvancedPage(Page):
         self.combo_auto_pause.setCurrentIndex(i if i >= 0 else 0)
         i = self.combo_cutscene_skip.findData(bool(cfg.get("live_cutscene_skip_enabled", True)))
         self.combo_cutscene_skip.setCurrentIndex(i if i >= 0 else 0)
+        self._refresh_region_label()
         self.refresh_monitors(select_index=cfg.get("capture_monitor_index", 0))
 
     def save(self, cfg):

@@ -28,6 +28,7 @@ if BASE_DIR not in sys.path:
 
 from app.core import activity as activity_mod
 from app.core import capture as capture_mod
+from app.core import regions as regions_mod
 from app.core import ocr as ocr_mod
 from app.core import translate as translate_mod
 from app.core import overlay as overlay_mod
@@ -203,6 +204,7 @@ class AppBridge(QtCore.QObject):
     show_window_signal = QtCore.pyqtSignal()
     toggle_mini_signal = QtCore.pyqtSignal()
     ask_google_permission_signal = QtCore.pyqtSignal()
+    open_region_selector_signal = QtCore.pyqtSignal()
 
 
 INFLIGHT_WAIT_TIMEOUT = 15.0  # bir baskasinin cevirisini bekleme ust siniri (sn)
@@ -291,10 +293,13 @@ class Orchestrator:
         self.bridge.show_window_signal.connect(self._show_window_on_gui_thread)
         self.bridge.toggle_mini_signal.connect(self._toggle_mini_on_gui_thread)
         self.bridge.ask_google_permission_signal.connect(self._ask_google_permission_on_gui_thread)
+        self.bridge.open_region_selector_signal.connect(self._open_region_selector_on_gui_thread)
         self.mini_panel = MiniPanelController(config, self)
+        self._region_selector = None  # acikken referansi canli tutar
 
         self.hotkeys = hotkeys_mod.HotkeyManager(
-            config, self.toggle_instant, self.toggle_live, self.request_quit
+            config, self.toggle_instant, self.toggle_live, self.request_quit,
+            on_region_select=self.request_open_region_selector,
         )
         self.tray = tray_mod.TrayApp(
             config,
@@ -631,9 +636,17 @@ class Orchestrator:
     # ------------------------------------------------------- yardimci
     def _ocr_and_filter(self, frame_bgr, offset):
         """OCR calistirir, paragraf satirlarini birlestirir ve cevrilmeye
-        deger olmayanlari (cok kisa/sembol/dusuk guven/zaten Turkce) eler."""
+        deger olmayanlari (cok kisa/sembol/dusuk guven/zaten Turkce/
+        kullanicinin disarida tuttugu bolgede olan) eler."""
         ocr_results = self.ocr_manager.recognize(frame_bgr, offset=offset)
         ocr_results = ocr_mod.merge_paragraph_lines(ocr_results)
+        exclude_regions = self.config.get("exclude_regions") or []
+        include_regions = self.config.get("include_regions") or []
+        if exclude_regions or include_regions:
+            ocr_results = [
+                r for r in ocr_results
+                if not regions_mod.is_bbox_excluded(r.bbox, exclude_regions, include_regions)
+            ]
         min_len = self.config.get("min_text_length", 2)
         min_conf = self.config.get("min_ocr_confidence", 0.45)
         source_lang = self.config.get("source_lang", "auto")
@@ -957,6 +970,38 @@ class Orchestrator:
         if self._pending_google_prompt:
             self._pending_google_prompt = False
             self._show_google_permission_dialog()
+
+    # --------------------------------------------------- bolge secimi (3.5)
+    def request_open_region_selector(self):
+        """Herhangi bir thread'den cagrilabilir (kisayol kancasi ayri
+        thread'de calisir) - QWidget'lar sadece GUI thread'inde olusturulabilir."""
+        self.bridge.open_region_selector_signal.emit()
+
+    def _open_region_selector_on_gui_thread(self):
+        if self._region_selector is not None:
+            self._region_selector.raise_()
+            self._region_selector.activateWindow()
+            return
+        from app.ui.regionoverlay import RegionSelectorOverlay
+        self._region_selector = RegionSelectorOverlay(
+            self.config.get("exclude_regions") or [],
+            self.config.get("include_regions") or [],
+            on_done=self._save_regions,
+        )
+        self._region_selector.destroyed.connect(self._clear_region_selector_ref)
+        self._region_selector.showFullScreen()
+
+    def _clear_region_selector_ref(self, *_):
+        self._region_selector = None
+
+    def _save_regions(self, exclude_regions, include_regions):
+        self.config["exclude_regions"] = exclude_regions
+        self.config["include_regions"] = include_regions
+        config_mod.save_config(self.config)
+        logger.info(
+            "Okuma bolgeleri guncellendi: %d disarida tutulan, %d sadece-okunan bolge.",
+            len(exclude_regions), len(include_regions),
+        )
 
     # ------------------------------------------------- Google Translate izni
     def _request_google_permission(self):

@@ -106,6 +106,51 @@ def test_live_cutscene_skip_enabled_wrong_type_resets_to_default(isolated_config
     assert cfg["live_cutscene_skip_enabled"] is True
 
 
+def test_hotkey_region_select_default():
+    assert config_mod.DEFAULT_CONFIG["hotkey_region_select"] == "f8"
+
+
+def test_exclude_regions_default_is_empty_list():
+    assert config_mod.DEFAULT_CONFIG["exclude_regions"] == []
+    assert config_mod.DEFAULT_CONFIG["include_regions"] == []
+
+
+def test_exclude_regions_accepts_valid_region_list(isolated_config):
+    region = {"left": 10, "top": 20, "width": 100, "height": 50}
+    isolated_config.write_text(json.dumps({"exclude_regions": [region]}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["exclude_regions"] == [region]
+
+
+def test_exclude_regions_rejects_non_list(isolated_config):
+    isolated_config.write_text(json.dumps({"exclude_regions": "yanlis"}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["exclude_regions"] == []
+
+
+def test_exclude_regions_rejects_malformed_region(isolated_config):
+    isolated_config.write_text(
+        json.dumps({"exclude_regions": [{"left": 0, "top": 0}]}),  # width/height eksik
+        encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["exclude_regions"] == []
+
+
+def test_exclude_regions_rejects_non_int_fields(isolated_config):
+    isolated_config.write_text(
+        json.dumps({"exclude_regions": [{"left": "0", "top": 0, "width": 10, "height": 10}]}),
+        encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["exclude_regions"] == []
+
+
+def test_include_regions_accepts_valid_region_list(isolated_config):
+    region = {"left": 0, "top": 0, "width": 10, "height": 10}
+    isolated_config.write_text(json.dumps({"include_regions": [region]}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["include_regions"] == [region]
+
+
 def test_wrong_type_string_field_resets_to_default(isolated_config):
     isolated_config.write_text(json.dumps({"ocr_engine": 42}), encoding="utf-8")
     cfg = config_mod.load_config()

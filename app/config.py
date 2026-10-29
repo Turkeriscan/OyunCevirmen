@@ -43,6 +43,7 @@ DEFAULT_CONFIG = {
     "hotkey_instant": "f9",
     "hotkey_live_toggle": "f10",
     "hotkey_quit": "f11",
+    "hotkey_region_select": "f8",
     # Canlı mod tarama sıklığı (saniye)
     "live_scan_interval": 0.45,
     # Canlı modda ekranın kaç sütun/satıra bölüneceği (değişen bölge tespiti için)
@@ -104,6 +105,12 @@ DEFAULT_CONFIG = {
     "window_geometry": None,
     # Log seviyesi
     "log_level": "INFO",
+    # Kullanicinin elle cizdigi bolgeler (3.5), masaustu MUTLAK piksel
+    # koordinatinda: [{"left","top","width","height"}, ...]. exclude_regions
+    # icindeki bolgeler HIC OKUNMAZ. include_regions BOS DEGILSE, SADECE o
+    # bolgeler okunur (digeri yoksayilir, exclude_regions'un ustune de uygulanir).
+    "exclude_regions": [],
+    "include_regions": [],
 }
 
 # Degeri None/esnek kalabilen anahtarlar: turu zorlanmaz, kullanildiklari
@@ -112,6 +119,17 @@ _NULLABLE_KEYS = {
     "allow_google_fallback", "mini_panel_pos", "window_geometry", "capture_monitor_identity",
 }
 _MONITOR_IDENTITY_KEYS = ("left", "top", "width", "height")
+_REGION_LIST_KEYS = {"exclude_regions", "include_regions"}
+_REGION_KEYS = ("left", "top", "width", "height")
+
+
+def _is_valid_region(region):
+    return (
+        isinstance(region, dict)
+        and all(k in region for k in _REGION_KEYS)
+        and all(isinstance(region[k], int) and not isinstance(region[k], bool)
+                for k in _REGION_KEYS)
+    )
 
 _lock = threading.RLock()  # load_config() ilk calistirmada save_config()'u kilit tutarken cagirabilir
 _cached = None
@@ -142,6 +160,12 @@ def _validate_config(data):
                 if not valid:
                     logger.warning("config.json: '%s' gecersiz (%r), sifirlaniyor.", key, value)
                     cleaned[key] = None
+            continue
+        if key in _REGION_LIST_KEYS:
+            valid = isinstance(value, list) and all(_is_valid_region(r) for r in value)
+            if not valid:
+                logger.warning("config.json: '%s' gecersiz (%r), varsayilana donuluyor.", key, value)
+                cleaned[key] = list(default)
             continue
         if isinstance(default, bool):
             if not isinstance(value, bool):

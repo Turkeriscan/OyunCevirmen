@@ -67,6 +67,31 @@ def test_all_hotkeys_invalid_does_not_raise():
     assert mgr._hooks == []
 
 
+def test_region_select_hotkey_registers_when_handler_provided():
+    config = {"hotkey_instant": "f9", "hotkey_live_toggle": "f10", "hotkey_quit": "f11",
+              "hotkey_region_select": "f8"}
+    mgr = hotkeys_mod.HotkeyManager(config, lambda: None, lambda: None, lambda: None,
+                                     on_region_select=lambda: None)
+
+    with patch.object(hotkeys_mod.keyboard, "add_hotkey", return_value="hook") as add:
+        mgr.start()
+
+    assert add.call_count == 4
+    assert len(mgr._hooks) == 4
+
+
+def test_region_select_hotkey_not_registered_when_handler_omitted():
+    """Eski (3.5 oncesi) cagiranlarla uyumluluk: on_region_select
+    verilmezse SADECE 3 kisayol kaydolmali, hata verilmemeli."""
+    config = {"hotkey_instant": "f9", "hotkey_live_toggle": "f10", "hotkey_quit": "f11"}
+    mgr = hotkeys_mod.HotkeyManager(config, lambda: None, lambda: None, lambda: None)
+
+    with patch.object(hotkeys_mod.keyboard, "add_hotkey", return_value="hook") as add:
+        mgr.start()
+
+    assert add.call_count == 3
+
+
 def test_safe_wrapper_catches_handler_exceptions():
     """Bir kisayolun ISLEVI (orn. toggle_instant) hata verirse, klavye
     kancasinin kendisi cokmemeli (keyboard kutuphanesi sessizce patlardi)."""

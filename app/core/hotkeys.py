@@ -15,11 +15,12 @@ logger = logging.getLogger("OyunCevirmen.hotkeys")
 
 
 class HotkeyManager:
-    def __init__(self, config, on_instant, on_live_toggle, on_quit):
+    def __init__(self, config, on_instant, on_live_toggle, on_quit, on_region_select=None):
         self.config = config
         self.on_instant = on_instant
         self.on_live_toggle = on_live_toggle
         self.on_quit = on_quit
+        self.on_region_select = on_region_select
         self._hooks = []
         self._lock = threading.Lock()
 
@@ -29,17 +30,24 @@ class HotkeyManager:
             instant_key = self.config.get("hotkey_instant", "f9")
             live_key = self.config.get("hotkey_live_toggle", "f10")
             quit_key = self.config.get("hotkey_quit", "f11")
+            region_key = self.config.get("hotkey_region_select", "f8")
+
+            entries = [
+                ("aninda", instant_key, self.on_instant),
+                ("canli", live_key, self.on_live_toggle),
+                ("cikis", quit_key, self.on_quit),
+            ]
+            # Bolge secimi (3.5) ISTEGE BAGLI: Orchestrator her zaman bu
+            # kisayolu saglamayabilir (orn. eski bir cagiran/test icin).
+            if self.on_region_select is not None:
+                entries.append(("bolge_sec", region_key, self.on_region_select))
 
             registered = []
             # Her kisayolu AYRI AYRI deneriz: config.json elle bozulup bir
             # tusu gecersiz bir dizgeye donusturulmus olsa bile (orn. bos
-            # metin), DIGER iki kisayol yine de calismaya devam etsin -
+            # metin), DIGER kisayollar yine de calismaya devam etsin -
             # ozellikle F11 (cikis) her zaman en azindan denenmeli.
-            for name, key, handler in (
-                ("aninda", instant_key, self.on_instant),
-                ("canli", live_key, self.on_live_toggle),
-                ("cikis", quit_key, self.on_quit),
-            ):
+            for name, key, handler in entries:
                 try:
                     self._hooks.append(keyboard.add_hotkey(key, self._safe(handler)))
                     registered.append(f"{name}={key}")
