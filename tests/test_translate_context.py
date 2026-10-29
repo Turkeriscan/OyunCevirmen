@@ -3,7 +3,7 @@ Ceviri modulu testleri: baglam (context) blogu dogru olusturuluyor mu,
 onbellek anahtari baglamdan bagimsiz mi, halusinasyon korumasi hala
 calisiyor mu. Gercek Ollama/internet gerektirmez (HTTP cagrisi mock'lanir).
 """
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from app.core import translate
 
