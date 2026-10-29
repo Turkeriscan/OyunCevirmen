@@ -22,6 +22,7 @@ class _FakeOrchestrator:
     _submit_live_translation = main_mod.Orchestrator._submit_live_translation
     _translate_one = main_mod.Orchestrator._translate_one
     _claim_inflight = main_mod.Orchestrator._claim_inflight
+    _claim_or_join_inflight = main_mod.Orchestrator._claim_or_join_inflight
     _release_inflight = main_mod.Orchestrator._release_inflight
     _remember = main_mod.Orchestrator._remember
     _make_box = staticmethod(main_mod.Orchestrator._make_box)
@@ -34,7 +35,7 @@ class _FakeOrchestrator:
         self._translate_consecutive_failures = 0
         self._translate_fail_lock = threading.Lock()
         self._translate_sequential_lock = threading.Lock()
-        self._translate_inflight = set()
+        self._translate_inflight = {}
         self._translate_inflight_lock = threading.Lock()
         self._translate_executor = __import__("concurrent.futures", fromlist=["ThreadPoolExecutor"]).ThreadPoolExecutor(max_workers=3)
         self._live_stop_event = threading.Event()

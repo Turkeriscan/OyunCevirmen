@@ -146,6 +146,20 @@ class AppBridge(QtCore.QObject):
     ask_google_permission_signal = QtCore.pyqtSignal()
 
 
+INFLIGHT_WAIT_TIMEOUT = 15.0  # bir baskasinin cevirisini bekleme ust siniri (sn)
+
+
+class _InflightTranslation:
+    """Su an surmekte olan tek bir ceviri isini temsil eder. Ayni metni
+    bekleyen baska bir cagiran (bkz. Orchestrator._claim_or_join_inflight),
+    bu is bitince event tetiklenir ve result alani okunabilir olur."""
+    __slots__ = ("event", "result")
+
+    def __init__(self):
+        self.event = threading.Event()
+        self.result = None
+
+
 class Orchestrator:
     MODE_NONE = "none"
     MODE_INSTANT = "instant"
@@ -176,7 +190,7 @@ class Orchestrator:
         self._translate_executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=max_workers, thread_name_prefix="ceviri"
         )
-        self._translate_inflight = set()       # su an cevrilmekte olan metinler
+        self._translate_inflight = {}           # metin -> _InflightTranslation
         self._translate_inflight_lock = threading.Lock()
         # Ollama'nin paralel istekleri iyi karsilamadigi gozlenirse (ardisik
         # hata/zaman asimi), gecici olarak tek tek (seri) cevirmeye donulur.
@@ -498,17 +512,36 @@ class Orchestrator:
         return [(orig, trans) for _, orig, trans in list(self.recent)[:n]]
 
     def _claim_inflight(self, text):
-        """Ayni metin birden fazla yerden (orn. ortusen iki hucreden) ayni
-        anda cevrilmeye calisiliyorsa, sadece ilkine izin verir."""
-        with self._translate_inflight_lock:
-            if text in self._translate_inflight:
-                return False
-            self._translate_inflight.add(text)
-            return True
+        """Ayni metin birden fazla yerden (orn. ortusen iki hucreden, veya
+        canli mod ile aninda tarama ayni anda) cevrilmeye calisiliyorsa,
+        sadece ilkine (True) izin verir. Ikinci cagiran, bu cevirinin
+        SONUCUNU _claim_or_join_inflight() uzerinden bekleyebilir (bkz.
+        _translate_all_blocking); canli mod gibi bekleyemeyen cagiranlar
+        sadece False'u gorup atlar."""
+        owner, _task = self._claim_or_join_inflight(text)
+        return owner
 
-    def _release_inflight(self, text):
+    def _claim_or_join_inflight(self, text):
+        """Metin henuz cevrilmiyorsa sahipligi alir (True, gorev) doner;
+        zaten cevriliyorsa VAROLAN gorevin dogrudan referansini (False,
+        gorev) olarak doner - cagiran bu gorevin event'ini bekleyip
+        sonucunu okuyabilir. Tek bir kilit altinda yapildigi icin
+        "sahiplik kontrolu" ile "varolan gorevi alma" arasinda yarisa
+        (baskasinin bu arada isi bitirip gorevi kaldirmasina) acik degildir."""
         with self._translate_inflight_lock:
-            self._translate_inflight.discard(text)
+            existing = self._translate_inflight.get(text)
+            if existing is not None:
+                return False, existing
+            task = _InflightTranslation()
+            self._translate_inflight[text] = task
+            return True, task
+
+    def _release_inflight(self, text, result=None):
+        with self._translate_inflight_lock:
+            task = self._translate_inflight.pop(text, None)
+        if task is not None:
+            task.result = result
+            task.event.set()
 
     def _translate_one(self, text, context_lines):
         """Tek bir metni cevirir. Ollama ardisik hata/zaman asimi verirse
@@ -574,36 +607,55 @@ class Orchestrator:
         cache_hits = 0
         durations = []
 
-        pending = []
+        pending = []     # (result, task) - BIZ cevirecegiz
+        joined = []       # (result, task) - BASKASI (orn. canli mod) zaten cevirmekte; sonucunu bekleyecegiz
         for r in results:
             cached = self.translator.cache.get(r.text, source_lang, target_lang, engine_pref)
             if cached is not None:
                 cache_hits += 1
                 boxes.append(self._make_box(r, cached))
+                continue
+            is_owner, task = self._claim_or_join_inflight(r.text)
+            if is_owner:
+                pending.append((r, task))
             else:
-                pending.append(r)
+                joined.append((r, task))
 
         futures = {}
-        for r in pending:
-            if not self._claim_inflight(r.text):
-                continue
+        for r, task in pending:
             t0 = time.time()
             fut = self._translate_executor.submit(self._translate_one, r.text, context_lines)
-            futures[fut] = (r, t0)
+            futures[fut] = (r, task, t0)
 
         for fut in concurrent.futures.as_completed(futures):
-            r, t0 = futures[fut]
+            r, task, t0 = futures[fut]
             try:
                 translated = fut.result()
             except Exception as exc:
                 logger.warning("Ceviri is parcacigi hata verdi: %s", exc)
                 translated = None
             finally:
-                self._release_inflight(r.text)
+                self._release_inflight(r.text, translated)
             durations.append(time.time() - t0)
             if translated:
                 self._remember(r.text, translated)
                 boxes.append(self._make_box(r, translated))
+
+        # Baska bir yerden (tipik olarak canli mod) ayni anda cevrilmekte
+        # olan satirlar: eskiden burada sessizce ATLANIYORDU (F9 aninda
+        # taramasinda o satir hic gorunmuyordu). Artik o cevirinin
+        # sonucunu bekleyip KULLANIYORUZ.
+        for r, task in joined:
+            t0 = time.time()
+            if task.event.wait(timeout=INFLIGHT_WAIT_TIMEOUT):
+                translated = task.result
+                durations.append(time.time() - t0)
+                if translated:
+                    boxes.append(self._make_box(r, translated))
+            else:
+                logger.warning(
+                    "Baska bir cevirinin bitmesi beklenirken zaman asimi: %r", r.text[:60],
+                )
 
         stats = {
             "total": len(results),

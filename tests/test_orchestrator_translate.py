@@ -23,6 +23,7 @@ class _FakeOrchestrator:
     _translate_one = main_mod.Orchestrator._translate_one
     _maybe_recover_ollama = main_mod.Orchestrator._maybe_recover_ollama
     _claim_inflight = main_mod.Orchestrator._claim_inflight
+    _claim_or_join_inflight = main_mod.Orchestrator._claim_or_join_inflight
     _release_inflight = main_mod.Orchestrator._release_inflight
     _context_lines = main_mod.Orchestrator._context_lines
     _remember = main_mod.Orchestrator._remember
@@ -35,7 +36,7 @@ class _FakeOrchestrator:
         self._translate_consecutive_failures = 0
         self._translate_fail_lock = threading.Lock()
         self._translate_sequential_lock = threading.Lock()
-        self._translate_inflight = set()
+        self._translate_inflight = {}
         self._translate_inflight_lock = threading.Lock()
         self._translate_executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
         self._ollama_recovery_attempted = False
