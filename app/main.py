@@ -28,6 +28,8 @@ if BASE_DIR not in sys.path:
 
 from app.core import activity as activity_mod
 from app.core import capture as capture_mod
+from app.core import glossary as glossary_mod
+from app.core import profiles as profiles_mod
 from app.core import regions as regions_mod
 from app.core import ocr as ocr_mod
 from app.core import translate as translate_mod
@@ -297,6 +299,13 @@ class Orchestrator:
         self.mini_panel = MiniPanelController(config, self)
         self._region_selector = None  # acikken referansi canli tutar
 
+        # ---- oyun bazli profiller (4.1, bkz. _sync_active_profile) ----
+        self._active_profile_exe = None       # su an UYGULANMIS profilin exe'si
+        self._profile_base_snapshot = None    # profilsiz/"genel" ayarlarin anlik goruntusu
+        self._current_foreground_exe = None   # Sahne sayfasinin gosterdigi, on plandaki oyun
+        self._profile_poll_stop = threading.Event()
+        self._profile_poll_thread = None
+
         self.hotkeys = hotkeys_mod.HotkeyManager(
             config, self.toggle_instant, self.toggle_live, self.request_quit,
             on_region_select=self.request_open_region_selector,
@@ -324,6 +333,8 @@ class Orchestrator:
         self.tray.start()
         if self.config.get("mini_panel_enabled"):
             self.mini_panel.show()
+        self._profile_poll_thread = threading.Thread(target=self._profile_poll_loop, daemon=True)
+        self._profile_poll_thread.start()
         logger.info("Orkestrasyon basladi. F9=Anlik F10=Canli F11=Cikis")
 
     # ---------------------------------------------------------------- F9
@@ -909,6 +920,7 @@ class Orchestrator:
         self._quitting = True
         with self._mode_lock:
             self._stop_live_locked()
+        self._profile_poll_stop.set()
         try:
             self.hotkeys.stop()
         except Exception:
@@ -1002,6 +1014,74 @@ class Orchestrator:
             "Okuma bolgeleri guncellendi: %d disarida tutulan, %d sadece-okunan bolge.",
             len(exclude_regions), len(include_regions),
         )
+
+    # ------------------------------------------------------- oyun profilleri (4.1)
+    def _profile_poll_loop(self):
+        """Canli/aninda modun calisip calismadigindan BAGIMSIZ, duzenli
+        araliklarla on plandaki pencereyi kontrol edip gerekirse profil
+        degistirir - boylece F9/F10'a hic basilmasa da, oyunlar arasi
+        gecis yapildiginda dogru profil hazir olur."""
+        while not self._profile_poll_stop.is_set():
+            try:
+                fg_exe = activity_mod.get_foreground_exe_name()
+                self._current_foreground_exe = fg_exe
+                self._sync_active_profile(fg_exe)
+            except Exception as exc:
+                logger.error("Oyun profili senkronizasyonu hata verdi: %s", exc)
+            self._profile_poll_stop.wait(profiles_mod.POLL_INTERVAL_SECONDS)
+
+    def _sync_active_profile(self, fg_exe):
+        enabled = self.config.get("game_profiles_enabled", True)
+        game_profiles = self.config.get("game_profiles", {})
+        target_exe = profiles_mod.resolve_target_exe(fg_exe, game_profiles, enabled)
+        live_snapshot = {k: self.config.get(k) for k in profiles_mod.PROFILE_KEYS}
+
+        new_active, new_base, values = profiles_mod.compute_profile_sync(
+            self._active_profile_exe, target_exe, game_profiles,
+            self._profile_base_snapshot, live_snapshot,
+        )
+        self._active_profile_exe = new_active
+        self._profile_base_snapshot = new_base
+        if values is not None:
+            self.config.update(values)
+            raw_glossary = game_profiles.get(new_active, {}).get("glossary") if new_active else None
+            self.translator.active_profile_glossary = (
+                glossary_mod._validate_entries(raw_glossary) if raw_glossary else None
+            )
+            logger.info("Oyun profili degisti: %s", new_active or "(genel ayarlar)")
+
+    def save_current_as_profile(self, exe_name):
+        """Su anki (canli) OCR motoru/dili, overlay stili, okuma bolgeleri
+        ve sozlugu bu oyun icin bir profil olarak kaydeder/gunceller."""
+        if not exe_name:
+            return False
+        game_profiles = self.config.setdefault("game_profiles", {})
+        current_glossary = self.translator.active_profile_glossary or glossary_mod.load_glossary()
+        game_profiles[exe_name] = profiles_mod.build_profile_from_config(self.config, current_glossary)
+        config_mod.save_config(self.config)
+        logger.info("'%s' icin oyun profili kaydedildi.", exe_name)
+        return True
+
+    def delete_profile(self, exe_name):
+        game_profiles = self.config.get("game_profiles", {})
+        if exe_name not in game_profiles:
+            return False
+        del game_profiles[exe_name]
+        config_mod.save_config(self.config)
+        logger.info("'%s' icin oyun profili silindi.", exe_name)
+        if self._active_profile_exe == exe_name:
+            # game_profiles'tan silinmis olmasi, resolve_target_exe'nin bir
+            # sonraki cagrida None donmesini (ve boylece compute_profile_sync'in
+            # "genel ayarlara don" yolunu almasini) saglar - _active_profile_exe
+            # BURADA elle None'a cekilMEZ, aksi halde "degisiklik yok" sanilip
+            # degerler asla geri yuklenmezdi.
+            self._sync_active_profile(self._current_foreground_exe)
+        return True
+
+    def set_game_profiles_enabled(self, enabled):
+        self.config["game_profiles_enabled"] = bool(enabled)
+        config_mod.save_config(self.config)
+        self._sync_active_profile(self._current_foreground_exe)
 
     # ------------------------------------------------- Google Translate izni
     def _request_google_permission(self):

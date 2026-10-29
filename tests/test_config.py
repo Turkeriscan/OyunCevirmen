@@ -151,6 +151,48 @@ def test_include_regions_accepts_valid_region_list(isolated_config):
     assert cfg["include_regions"] == [region]
 
 
+def test_game_profiles_enabled_default_is_true():
+    assert config_mod.DEFAULT_CONFIG["game_profiles_enabled"] is True
+
+
+def test_game_profiles_default_is_empty_dict():
+    assert config_mod.DEFAULT_CONFIG["game_profiles"] == {}
+
+
+def test_game_profiles_accepts_valid_profile(isolated_config):
+    profile = {
+        "ocr_engine": "easyocr", "source_lang": "ja", "overlay_style": "subtitle",
+        "exclude_regions": [{"left": 0, "top": 0, "width": 10, "height": 10}],
+        "include_regions": [],
+        "glossary": [{"source": "Ldhen", "target": "Ldhen", "no_translate": False}],
+    }
+    isolated_config.write_text(json.dumps({"game_profiles": {"game.exe": profile}}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["game_profiles"] == {"game.exe": profile}
+
+
+def test_game_profiles_rejects_non_dict(isolated_config):
+    isolated_config.write_text(json.dumps({"game_profiles": ["yanlis"]}), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["game_profiles"] == {}
+
+
+def test_game_profiles_rejects_malformed_profile_value(isolated_config):
+    isolated_config.write_text(
+        json.dumps({"game_profiles": {"game.exe": {"ocr_engine": 123}}}),  # str olmali
+        encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["game_profiles"] == {}
+
+
+def test_game_profiles_rejects_malformed_region_inside_profile(isolated_config):
+    isolated_config.write_text(
+        json.dumps({"game_profiles": {"game.exe": {"exclude_regions": [{"left": 0}]}}}),
+        encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg["game_profiles"] == {}
+
+
 def test_wrong_type_string_field_resets_to_default(isolated_config):
     isolated_config.write_text(json.dumps({"ocr_engine": 42}), encoding="utf-8")
     cfg = config_mod.load_config()

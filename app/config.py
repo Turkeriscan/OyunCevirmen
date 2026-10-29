@@ -7,6 +7,8 @@ import logging
 import os
 import threading
 
+from app.core import glossary as glossary_mod
+
 logger = logging.getLogger("OyunCevirmen.config")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # C:\OyunCevirmen
@@ -111,6 +113,12 @@ DEFAULT_CONFIG = {
     # bolgeler okunur (digeri yoksayilir, exclude_regions'un ustune de uygulanir).
     "exclude_regions": [],
     "include_regions": [],
+    # Oyun bazli profiller (4.1): on plandaki .exe'ye gore OCR motoru/dili,
+    # overlay stili, okuma bolgeleri ve sozluk otomatik degisir.
+    "game_profiles_enabled": True,
+    # {"oyun.exe": {"ocr_engine":..., "source_lang":..., "overlay_style":...,
+    #               "exclude_regions":[...], "include_regions":[...], "glossary":[...]}}
+    "game_profiles": {},
 }
 
 # Degeri None/esnek kalabilen anahtarlar: turu zorlanmaz, kullanildiklari
@@ -121,6 +129,30 @@ _NULLABLE_KEYS = {
 _MONITOR_IDENTITY_KEYS = ("left", "top", "width", "height")
 _REGION_LIST_KEYS = {"exclude_regions", "include_regions"}
 _REGION_KEYS = ("left", "top", "width", "height")
+
+
+def _is_valid_game_profile(profile):
+    if not isinstance(profile, dict):
+        return False
+    for key in ("ocr_engine", "source_lang", "overlay_style"):
+        if key in profile and not isinstance(profile[key], str):
+            return False
+    for key in ("exclude_regions", "include_regions"):
+        if key in profile:
+            value = profile[key]
+            if not (isinstance(value, list) and all(_is_valid_region(r) for r in value)):
+                return False
+    if "glossary" in profile and not isinstance(profile["glossary"], list):
+        return False
+    return True
+
+
+def _is_valid_game_profiles(value):
+    return (
+        isinstance(value, dict)
+        and all(isinstance(k, str) for k in value)
+        and all(_is_valid_game_profile(p) for p in value.values())
+    )
 
 
 def _is_valid_region(region):
@@ -166,6 +198,11 @@ def _validate_config(data):
             if not valid:
                 logger.warning("config.json: '%s' gecersiz (%r), varsayilana donuluyor.", key, value)
                 cleaned[key] = list(default)
+            continue
+        if key == "game_profiles":
+            if not _is_valid_game_profiles(value):
+                logger.warning("config.json: '%s' gecersiz, varsayilana donuluyor.", key)
+                cleaned[key] = dict(default)
             continue
         if isinstance(default, bool):
             if not isinstance(value, bool):

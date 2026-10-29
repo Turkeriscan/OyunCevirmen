@@ -11,7 +11,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from app.ui import theme as T
 from app.ui.theme import px, pxf
-from app.ui.widgets import IconButton, Keycaps, label, scroll_page
+from app.ui.widgets import Combo, IconButton, Keycaps, label, scroll_page, text_button
 
 
 def timecode(seconds, millis=True):
@@ -494,6 +494,86 @@ class Transcript(QtWidgets.QFrame):
         return "\n".join(out)
 
 
+# ========================================================== Oyun profili
+class ProfileBar(QtWidgets.QWidget):
+    """Su an on plandaki oyunu gosterir; o oyun icin ayri bir profil
+    (OCR motoru/dili, overlay stili, okuma bolgeleri, sozluk) kaydedip
+    yonetmeyi saglar (4.1)."""
+
+    def __init__(self, ctx, parent=None):
+        super().__init__(parent)
+        self.ctx = ctx
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(px(10))
+
+        self.lbl = label("", "Faint")
+        lay.addWidget(self.lbl, 1)
+
+        self.combo_enabled = Combo()
+        self.combo_enabled.addItem("Profiller açık", True)
+        self.combo_enabled.addItem("Profiller kapalı", False)
+        self.combo_enabled.currentIndexChanged.connect(self._toggle_enabled)
+        lay.addWidget(self.combo_enabled)
+
+        self.btn_save = text_button("Profili kaydet")
+        self.btn_save.clicked.connect(self._save)
+        lay.addWidget(self.btn_save)
+
+        self.btn_delete = text_button("Profili sil", "Danger")
+        self.btn_delete.clicked.connect(self._delete)
+        lay.addWidget(self.btn_delete)
+
+    def _toggle_enabled(self):
+        if self.ctx.is_loading():
+            return
+        self.ctx.orchestrator.set_game_profiles_enabled(bool(self.combo_enabled.currentData()))
+        self.refresh()
+
+    def _current_exe(self):
+        return getattr(self.ctx.orchestrator, "_current_foreground_exe", None)
+
+    def _save(self):
+        exe = self._current_exe()
+        if not exe:
+            self.ctx.flash("Önce bir oyun penceresine geç")
+            return
+        self.ctx.orchestrator.save_current_as_profile(exe)
+        self.ctx.flash(f"'{exe}' için profil kaydedildi")
+        self.refresh()
+
+    def _delete(self):
+        exe = self._current_exe()
+        if exe and self.ctx.orchestrator.delete_profile(exe):
+            self.ctx.flash(f"'{exe}' için profil silindi")
+        self.refresh()
+
+    def refresh(self):
+        o = self.ctx.orchestrator
+        exe = self._current_exe()
+        game_profiles = o.config.get("game_profiles", {})
+        has_profile = bool(exe) and exe in game_profiles
+        active = getattr(o, "_active_profile_exe", None)
+
+        if not exe:
+            self.lbl.setText("Oyun tespit edilemedi")
+        elif has_profile and active == exe:
+            self.lbl.setText(f"'{exe}' için profil uygulanıyor")
+        elif has_profile:
+            self.lbl.setText(f"'{exe}' için profil var (profiller kapalı)")
+        else:
+            self.lbl.setText(f"'{exe}' için profil yok, genel ayarlar kullanılıyor")
+
+        self.combo_enabled.blockSignals(True)
+        i = self.combo_enabled.findData(bool(o.config.get("game_profiles_enabled", True)))
+        self.combo_enabled.setCurrentIndex(i if i >= 0 else 0)
+        self.combo_enabled.blockSignals(False)
+
+        self.btn_save.setText("Profili güncelle" if has_profile else "Profili kaydet")
+        self.btn_save.setEnabled(bool(exe))
+        self.btn_delete.setEnabled(has_profile)
+
+
 # ================================================================ Sayfa
 class ScenePage(QtWidgets.QWidget):
     def __init__(self, ctx, parent=None):
@@ -517,6 +597,9 @@ class ScenePage(QtWidgets.QWidget):
         titles.addWidget(self.lead)
         head.addLayout(titles, 1)
         ll.addLayout(head)
+
+        self.profile_bar = ProfileBar(ctx)
+        ll.addWidget(self.profile_bar)
 
         self.screen = Screen()
         ll.addWidget(self.screen, 1)
@@ -551,6 +634,7 @@ class ScenePage(QtWidgets.QWidget):
         self.ctx.flash("Akış altyazı biçiminde panoya kopyalandı")
 
     def refresh(self, mode, hk_instant, hk_live):
+        self.profile_bar.refresh()
         self.btn_instant.set_hotkey(hk_instant)
         self.btn_live.set_hotkey(hk_live)
         self.btn_instant.set_active(mode == "instant", "Ekranda")

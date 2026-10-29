@@ -254,6 +254,10 @@ class TranslationManager:
         # kullanicidan bir kez izin istenmesini saglar (bkz. main.py
         # _request_google_permission). Arayuzsuz/testte None kalabilir.
         self.on_google_permission_needed = None
+        # Su an aktif bir oyun profilinin SOZLUGU (4.1, bkz. main.py
+        # Orchestrator._sync_active_profile). None/bos ise genel glossary.json
+        # kullanilir - boylece profilsiz oyunlar/testler hic etkilenmez.
+        self.active_profile_glossary = None
 
     def _google_fallback_allowed(self):
         """Ollama BASARISIZ olup YEDEK olarak Google'a gidilmesi gerektiginde
@@ -334,7 +338,7 @@ class TranslationManager:
         # (bkz. _translate_via_google). Argos/DeepL icin sozluk talimati
         # OKUYAMADIKLARI icin uygulanmaz (ikisi de ayni zamanda nadiren
         # kullanilan, isteğe bagli motorlardir).
-        glossary_entries = glossary_mod.load_glossary()
+        glossary_entries = self.active_profile_glossary or glossary_mod.load_glossary()
 
         result = None
         used_engine = None

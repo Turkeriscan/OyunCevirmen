@@ -35,6 +35,7 @@ class _FakeOrchestrator:
         self._translate_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         self.bridge = MagicMock()
         self._quitting = False
+        self._profile_poll_stop = threading.Event()
 
 
 def test_request_quit_closes_capturer():
