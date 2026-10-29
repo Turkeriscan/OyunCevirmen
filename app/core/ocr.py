@@ -329,17 +329,26 @@ class OCRManager:
         self.config = config
         self._engine = None
         self._engine_name = None
+        self._engine_lang = None
         self._lock = threading.Lock()
 
     def get_engine(self):
         with self._lock:
             wanted = self.config.get("ocr_engine", "windows")
-            if self._engine is not None and self._engine_name == wanted:
+            # Dil degisikligi de motorun yeniden kurulmasini gerektirir:
+            # WindowsOCREngine/EasyOCREngine/PaddleOCREngine dili SADECE
+            # kurulurken sabitler (bkz. __init__'leri); aksi halde "Oyunun
+            # dili" ayari degistirildiginde (motor turu ayni kalirsa) eski
+            # dil sessizce kullanilmaya devam ederdi.
+            wanted_lang = self.config.get("source_lang", "auto")
+            if (self._engine is not None and self._engine_name == wanted
+                    and self._engine_lang == wanted_lang):
                 return self._engine
 
             old_engine = self._engine
             self._engine = self._build_engine(wanted)
             self._engine_name = wanted
+            self._engine_lang = wanted_lang
             self._release_engine(old_engine)
             return self._engine
 

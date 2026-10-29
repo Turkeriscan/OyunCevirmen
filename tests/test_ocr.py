@@ -159,6 +159,7 @@ def test_ocr_manager_recognize_applies_offset_after_rescale():
     manager = ocr.OCRManager(cfg)
     manager._engine = _FakeEngine()
     manager._engine_name = "windows"
+    manager._engine_lang = "auto"
 
     frame = np.zeros((100, 200, 3), dtype=np.uint8)  # buyutulecek kadar kucuk
     results = manager.recognize(frame, offset=(500, 300))
@@ -208,6 +209,54 @@ def test_get_engine_releases_old_engine_on_switch():
 
     with patch.object(ocr.OCRManager, "_build_engine", return_value=MagicMock(name="windows_engine")), \
          patch.object(ocr.OCRManager, "_release_engine") as release:
+        manager.get_engine()
+
+    release.assert_called_once_with(fake_old)
+
+
+# ------------------------------------- dil degisince motor yeniden kurulmali
+def test_get_engine_rebuilds_when_source_lang_changes():
+    """Motor turu (ocr_engine) AYNI kalsa bile, "Oyunun dili" ayari
+    degisince motor yeniden kurulmali - aksi halde WindowsOCREngine/
+    EasyOCREngine kurulurkenki ESKI dili sessizce kullanmaya devam ederdi."""
+    cfg = {"ocr_engine": "windows", "source_lang": "en"}
+    manager = ocr.OCRManager(cfg)
+
+    with patch.object(ocr.OCRManager, "_build_engine",
+                       side_effect=lambda wanted: MagicMock(name=f"engine-{wanted}")) as build:
+        first = manager.get_engine()
+        cfg["source_lang"] = "de"
+        second = manager.get_engine()
+
+    assert build.call_count == 2
+    assert first is not second
+
+
+def test_get_engine_does_not_rebuild_when_nothing_changed():
+    cfg = {"ocr_engine": "windows", "source_lang": "en"}
+    manager = ocr.OCRManager(cfg)
+
+    with patch.object(ocr.OCRManager, "_build_engine",
+                       return_value=MagicMock(name="engine")) as build:
+        first = manager.get_engine()
+        second = manager.get_engine()
+
+    assert build.call_count == 1
+    assert first is second
+
+
+def test_get_engine_releases_old_engine_when_only_lang_changes():
+    fake_old = MagicMock()
+    fake_old.name = "easyocr"
+    cfg = {"ocr_engine": "easyocr", "source_lang": "en"}
+    manager = ocr.OCRManager(cfg)
+    manager._engine = fake_old
+    manager._engine_name = "easyocr"
+    manager._engine_lang = "en"
+
+    with patch.object(ocr.OCRManager, "_build_engine", return_value=MagicMock(name="new_engine")), \
+         patch.object(ocr.OCRManager, "_release_engine") as release:
+        cfg["source_lang"] = "ja"
         manager.get_engine()
 
     release.assert_called_once_with(fake_old)
