@@ -72,6 +72,7 @@ class TranslationPage(Page):
         self.lang_row = g.row("Oyunun dili", "", self.combo_lang)
 
         self.combo_google_perm = Combo()
+        self.combo_google_perm.addItem("Sorulmadı (ilk ihtiyaçta sorar)", None)
         self.combo_google_perm.addItem("Açık", True)
         self.combo_google_perm.addItem("Kapalı", False)
         self.google_perm_row = g.row(
@@ -148,12 +149,12 @@ class TranslationPage(Page):
         if self.combo_lang.findData(lang) < 0:
             self.combo_lang.addItem(lang, lang)
         _set(self.combo_lang, lang)
-        # allow_google_fallback uc durumlu: None (sorulmadi) gorsel olarak
-        # "Kapali" ile gosterilir ama bu SECIM OLARAK YAZILMAZ (bkz. save()
-        # ve _google_perm_changed) - kullanici dokunmadan kalirsa "sorulmadi"
-        # durumu korunur.
+        # allow_google_fallback UC DURUMLU: None (sorulmadi/ilk ihtiyacta
+        # sorar), True (acik), False (kapali). Kombo artik bu uc durumu
+        # da DOGRUDAN gosterir (eskiden None gorsel olarak "Kapali" ile
+        # karistirilip kullanici yanlislikla "zaten kapatmisim" sanabilirdi).
         allowed = cfg.get("allow_google_fallback")
-        _set(self.combo_google_perm, False if allowed is None else bool(allowed))
+        _set(self.combo_google_perm, allowed)
         self._hints()
 
     def save(self, cfg):
@@ -162,15 +163,29 @@ class TranslationPage(Page):
         cfg["ollama_model"] = self.combo_model.currentText().strip()
         cfg["ollama_host"] = self.edit_host.text().strip() or "http://127.0.0.1:11434"
         cfg["source_lang"] = self.combo_lang.currentData() or "auto"
-        # allow_google_fallback BILEREK burada yazilmiyor; bkz. yukaridaki not.
+        # allow_google_fallback BILEREK burada yazilmiyor; kendi ozel
+        # degisim isleyicisi (_google_perm_changed) tarafindan aninda
+        # yazilir, bkz. asagisi.
 
     def _google_perm_changed(self, *_):
         if self.ctx.is_loading():
             return
-        value = bool(self.combo_google_perm.currentData())
+        value = self.combo_google_perm.currentData()  # None | True | False
         self.ctx.config["allow_google_fallback"] = value
         config_mod.save_config(self.ctx.config)
-        self.ctx.flash("Google Translate izni açıldı" if value else "Google Translate izni kapatıldı")
+        if value is None:
+            # Kullanici kararini bilerek geri aldi: "ilk ihtiyacta sorar"
+            # durumuna donuldugu icin, bu oturumda daha once sorulmus
+            # olsa bile tekrar sorulabilmesi saglanir.
+            try:
+                self.ctx.orchestrator.reset_google_permission_prompt()
+            except Exception:
+                pass
+            self.ctx.flash("Google Translate izni sıfırlandı; ilk ihtiyaçta tekrar sorulacak")
+        elif value:
+            self.ctx.flash("Google Translate izni açıldı")
+        else:
+            self.ctx.flash("Google Translate izni kapatıldı")
 
     def _hints(self, *_):
         ocr = dict((k, h) for k, _n, h in OCR_ENGINES).get(self.combo_ocr.currentData(), "")
