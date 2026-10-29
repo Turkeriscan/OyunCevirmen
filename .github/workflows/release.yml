@@ -1,0 +1,53 @@
+name: Kurulum Paketi Yayınla
+
+# "v1.2.3" gibi bir etiket push'landığında (5.4): testleri çalıştırır,
+# bağımsız kurulum .exe'sini (PyInstaller + Inno Setup, bkz.
+# installer/README.md) derler ve o etiket için bir GitHub Release
+# oluşturup .exe'yi ekler - kurulum.ps1 (5.3) bu Release'leri bulur.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  test:
+    uses: ./.github/workflows/tests.yml
+
+  build-installer:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Bağımlılıkları kur
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r installer/requirements-build.txt
+
+      - name: PyInstaller ile derle (onedir)
+        working-directory: installer
+        run: pyinstaller oyuncevirmen.spec --noconfirm
+
+      - name: Inno Setup kur
+        run: choco install innosetup --no-progress -y
+
+      - name: Kurulum paketini (.exe) oluştur
+        working-directory: installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" setup.iss
+
+      - name: Release'e ekle
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/output/OyunCevirmenKur.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
