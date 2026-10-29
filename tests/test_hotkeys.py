@@ -4,11 +4,22 @@ donusmus olsa bile DIGER kisayollarin kayit olmaya devam ettigini
 dogrular (daha once tek bir hata TUM kayitlari iptal ediyordu).
 
 Gercek klavye kancasi kurmaz: 'keyboard' modulu sahte (mock) ile
-degistirilir.
+degistirilir. Win32 RegisterHotKey EK kanali (4.4, bkz. winhotkey.py) da
+mock'lanir - aksi halde bu testler calisirken (ozellikle tum paket
+calisirken, baska bir dosya zaten bir QApplication olusturmussa) GERCEK
+sistem capinda kisayollar (F9/F10/F11...) kaydedilip birakilirdi.
 """
+import pytest
 from unittest.mock import MagicMock, patch
 
 from app.core import hotkeys as hotkeys_mod
+
+
+@pytest.fixture(autouse=True)
+def _stub_win32_hotkey_bridge():
+    with patch.object(hotkeys_mod.winhotkey_mod.Win32HotkeyBridge, "register", return_value=[]), \
+         patch.object(hotkeys_mod.winhotkey_mod.Win32HotkeyBridge, "unregister_all", return_value=None):
+        yield
 
 
 def test_all_hotkeys_register_when_all_valid():
@@ -176,6 +187,81 @@ def test_unregister_all_unhooks_key_hooks_and_resets_held_state():
     assert unhook.call_count == 2
     assert mgr._key_hooks == []
     assert mgr._reveal_held is False
+
+
+def test_win32_bridge_also_registered_alongside_keyboard_hook():
+    """4.4: 'keyboard' kancasi YANI SIRA Win32 RegisterHotKey de denenir -
+    biri calismazsa digeri bir sans saglar."""
+    config = {"hotkey_instant": "f9", "hotkey_live_toggle": "f10", "hotkey_quit": "f11"}
+    mgr = hotkeys_mod.HotkeyManager(config, lambda: None, lambda: None, lambda: None)
+
+    with patch.object(hotkeys_mod.keyboard, "add_hotkey", return_value="hook"), \
+         patch.object(hotkeys_mod.winhotkey_mod.Win32HotkeyBridge, "register",
+                      return_value=["aninda=f9", "canli=f10", "cikis=f11"]) as win_register:
+        mgr.start()
+
+    win_register.assert_called_once()
+    entries = win_register.call_args[0][0]
+    assert [e[0] for e in entries] == ["aninda", "canli", "cikis"]
+
+
+def test_dedup_safe_suppresses_second_channel_within_window():
+    """Ayni fiziksel basis HEM keyboard kancasindan HEM DE Win32'den
+    (bkz. winhotkey.py) gelirse, ikinci bildirim KISA SURE icinde
+    yoksayilmali - aksi halde ayni eylem iki kez tetiklenirdi."""
+    config = {"hotkey_instant": "f9", "hotkey_live_toggle": "f10", "hotkey_quit": "f11"}
+    handler = MagicMock()
+    mgr = hotkeys_mod.HotkeyManager(config, handler, lambda: None, lambda: None)
+
+    wrapped = mgr._dedup_safe("aninda", handler)
+    wrapped()  # "keyboard" kanalindan geldi say
+    wrapped()  # "Win32" kanalindan AYNI anda geldi say (yanki)
+
+    handler.assert_called_once()
+
+
+def test_dedup_safe_allows_second_real_press_after_window_passes():
+    config = {"hotkey_instant": "f9", "hotkey_live_toggle": "f10", "hotkey_quit": "f11"}
+    handler = MagicMock()
+    mgr = hotkeys_mod.HotkeyManager(config, handler, lambda: None, lambda: None)
+
+    wrapped = mgr._dedup_safe("aninda", handler)
+    wrapped()
+    mgr._last_fired["aninda"] -= hotkeys_mod.HOTKEY_DEDUPE_SECONDS + 0.01  # zamani geriye sar
+    wrapped()
+
+    assert handler.call_count == 2
+
+
+def test_dedup_safe_tracks_different_actions_independently():
+    config = {"hotkey_instant": "f9", "hotkey_live_toggle": "f10", "hotkey_quit": "f11"}
+    h1, h2 = MagicMock(), MagicMock()
+    mgr = hotkeys_mod.HotkeyManager(config, h1, h2, lambda: None)
+
+    mgr._dedup_safe("aninda", h1)()
+    mgr._dedup_safe("canli", h2)()
+
+    h1.assert_called_once()
+    h2.assert_called_once()
+
+
+def test_dedup_safe_catches_handler_exceptions():
+    config = {"hotkey_instant": "f9", "hotkey_live_toggle": "f10", "hotkey_quit": "f11"}
+    boom = MagicMock(side_effect=RuntimeError("patlat"))
+    mgr = hotkeys_mod.HotkeyManager(config, boom, lambda: None, lambda: None)
+
+    mgr._dedup_safe("aninda", boom)()  # istisna firlatmamali
+    boom.assert_called_once()
+
+
+def test_unregister_all_resets_dedup_state():
+    config = {"hotkey_instant": "f9", "hotkey_live_toggle": "f10", "hotkey_quit": "f11"}
+    mgr = hotkeys_mod.HotkeyManager(config, lambda: None, lambda: None, lambda: None)
+    mgr._last_fired["aninda"] = 999999.0
+
+    mgr._unregister_all()
+
+    assert mgr._last_fired == {}
 
 
 def test_safe_wrapper_catches_handler_exceptions():

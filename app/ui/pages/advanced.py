@@ -2,6 +2,7 @@
 from PyQt6 import QtWidgets
 
 from app.core import capture as capture_mod
+from app.core import winhotkey as winhotkey_mod
 from app.ui.theme import px
 from app.ui.widgets import (Combo, IconButton, Page, SettingsGroup, Stepper, ValueSlider, label,
                             section_header, text_button)
@@ -120,6 +121,16 @@ class AdvancedPage(Page):
         self.body.addWidget(g5)
 
         self.body.addSpacing(px(10))
+        self.body.addWidget(section_header("Sorun giderme"))
+        g6 = SettingsGroup()
+        self.btn_relaunch_admin = text_button("Yönetici olarak yeniden başlat", "Danger")
+        self.btn_relaunch_admin.clicked.connect(self._relaunch_as_admin)
+        g6.row("Kısayollar oyunda çalışmıyor", "Oyun \"Yönetici olarak çalıştır\" ile açıksa, "
+               "kısayolların çalışması için bu programın da Yönetici olması gerekir.",
+               self.btn_relaunch_admin)
+        self.body.addWidget(g6)
+
+        self.body.addSpacing(px(10))
         self.body.addWidget(section_header("Başa dön"))
         g4 = SettingsGroup()
         b1 = text_button("Rehberi aç")
@@ -167,6 +178,12 @@ class AdvancedPage(Page):
     def set_cache_count(self, n):
         self.lbl_cache.setText("?" if n is None else f"{n:,} çeviri".replace(",", "."))
         self.btn_clear.setEnabled(bool(n))
+
+    def _relaunch_as_admin(self):
+        if winhotkey_mod.relaunch_as_admin():
+            self.ctx.orchestrator.request_quit()
+        else:
+            self.ctx.flash("Yönetici olarak başlatma iptal edildi veya başarısız oldu")
 
     def _clear_regions(self):
         self.ctx.config["exclude_regions"] = []

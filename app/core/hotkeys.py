@@ -8,10 +8,18 @@ F11 -> programi kapat
 """
 import logging
 import threading
+import time
 
 import keyboard
 
+from app.core import winhotkey as winhotkey_mod
+
 logger = logging.getLogger("OyunCevirmen.hotkeys")
+
+# Ayni fiziksel tus basisi HEM 'keyboard' kancasindan HEM DE Win32
+# RegisterHotKey kanalindan (bkz. winhotkey.py) gelebilir - bu esik
+# icinde gelen İKİNCİ bildirim aynı eylemin YANKISI sayilip yoksayilir.
+HOTKEY_DEDUPE_SECONDS = 0.25
 
 
 class HotkeyManager:
@@ -31,6 +39,12 @@ class HotkeyManager:
         self._key_hooks = []
         self._reveal_held = False
         self._lock = threading.Lock()
+        # 4.4: Win32 RegisterHotKey EK kanali - 'keyboard' kancasi oyunun
+        # Yonetici calismasi veya baska bir kancayla cakisma gibi
+        # sebeplerle calismazsa bir sans daha saglar.
+        self._win_bridge = winhotkey_mod.Win32HotkeyBridge()
+        self._last_fired = {}
+        self._dedupe_lock = threading.Lock()
 
     def start(self):
         with self._lock:
@@ -58,7 +72,7 @@ class HotkeyManager:
             # ozellikle F11 (cikis) her zaman en azindan denenmeli.
             for name, key, handler in entries:
                 try:
-                    self._hooks.append(keyboard.add_hotkey(key, self._safe(handler)))
+                    self._hooks.append(keyboard.add_hotkey(key, self._dedup_safe(name, handler)))
                     registered.append(f"{name}={key}")
                 except Exception as exc:
                     logger.error("Kisayol kaydedilemedi (%s=%r): %s", name, key, exc)
@@ -73,7 +87,33 @@ class HotkeyManager:
                 except Exception as exc:
                     logger.error("Kisayol kaydedilemedi (orijinali_goster=%r): %s", reveal_key, exc)
 
-            logger.info("Kisayollar aktif: %s", ", ".join(registered) if registered else "HICBIRI (hata)")
+            # Win32 RegisterHotKey EK kanali (4.4) - ayni kisayollar icin
+            # FARKLI bir isletim sistemi mekanizmasi (bkz. winhotkey.py).
+            # Ayri loglanir ki "aynisi iki kez yazildi" sanilmasin.
+            win_entries = [(name, key, self._dedup_safe(name, handler)) for name, key, handler in entries]
+            registered_win = self._win_bridge.register(win_entries)
+
+            logger.info(
+                "Kisayollar aktif ('keyboard'): %s%s",
+                ", ".join(registered) if registered else "HICBIRI (hata)",
+                f" | Win32 RegisterHotKey (ek kanal): {', '.join(registered_win)}" if registered_win else "",
+            )
+
+    def _dedup_safe(self, name, fn):
+        """_safe()'in ustune, AYNI eylemin kisa bir sure icinde IKINCI
+        kanaldan (bkz. HOTKEY_DEDUPE_SECONDS) tekrar tetiklenmesini
+        yoksayan bir katman ekler."""
+        safe_fn = self._safe(fn)
+
+        def wrapper(*_args):
+            now = time.monotonic()
+            with self._dedupe_lock:
+                last = self._last_fired.get(name, 0.0)
+                if now - last < HOTKEY_DEDUPE_SECONDS:
+                    return
+                self._last_fired[name] = now
+            safe_fn()
+        return wrapper
 
     def _on_reveal_press_once(self):
         # OS tus-tekrari yuzunden basili tutulurken press defalarca ates
@@ -117,6 +157,8 @@ class HotkeyManager:
                 pass
         self._key_hooks = []
         self._reveal_held = False
+        self._win_bridge.unregister_all()
+        self._last_fired = {}
 
     def stop(self):
         with self._lock:
