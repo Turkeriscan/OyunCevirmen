@@ -297,6 +297,18 @@ class Orchestrator:
         prev_frame = None
         cell_signatures = {}
         cell_boxes = {}
+        # Bir hucre YENIDEN OCR'landiginda (sinyali degistiginde) bir artar.
+        # Arka planda suren bir ceviri bitince, bu sayi hala cevirinin
+        # basladigi andaki degerle AYNIYSA sonuc ekrana konur; degismisse
+        # (hucre bu arada tekrar degismis, YENI bir satir gelmis) eski
+        # cevirinin ekrana gec gelip yeni yazinin ustune binmesi onlenir -
+        # ama onbellege/akisa yazilmasi hep devam eder (bkz. _submit_live_translation).
+        cell_generation = {}
+        # Bir hucrede SON GORULEN metinler: ayni hucre ayni metni tekrar
+        # tekrar bulursa (orn. komsu bir HUD ogesi titreyip sinyali
+        # degistirdigi icin gercekte yazi degismedigi halde yeniden okunursa)
+        # akisi (_remember) tekrar tekrar en uste tasimamak icin kullanilir.
+        cell_last_texts = {}
         cell_lock = threading.Lock()
         grid = None
         frame_h = frame_w = None
@@ -339,6 +351,8 @@ class Orchestrator:
                     continue
                 any_change = True
                 cell_signatures[idx] = sig
+                generation = cell_generation.get(idx, 0) + 1
+                cell_generation[idx] = generation
                 l, t, r, b = cell
                 pl = max(0, l - padding)
                 pt = max(0, t - padding)
@@ -351,19 +365,13 @@ class Orchestrator:
                 survivors = self._ocr_and_filter(sub, offset)
                 tick_total += len(survivors)
 
-                # Onbellekte olanlar HEMEN gosterilir (bu hucrenin kutu listesi);
-                # olmayanlar arka planda (sinirli paralellikte) cevrilip hazir
-                # olduklarinda overlay ayrica guncellenir - tarama dongusu
-                # (bu for dongusu ve disaridaki while) onlari BEKLEMEZ.
-                cached_boxes = []
-                for res in survivors:
-                    cached = self.translator.cache.get(res.text, source_lang, target_lang, engine_pref)
-                    if cached is not None:
-                        tick_cache_hits += 1
-                        cached_boxes.append(self._make_box(res, cached))
-                    else:
-                        tick_pending += 1
-                        self._submit_live_translation(res, idx, cell_boxes, cell_lock, context_lines)
+                cached_boxes, cache_hits, pending = self._live_process_cell(
+                    idx, survivors, source_lang, target_lang, engine_pref,
+                    context_lines, generation, cell_generation, cell_boxes,
+                    cell_last_texts, cell_lock,
+                )
+                tick_cache_hits += cache_hits
+                tick_pending += pending
 
                 with cell_lock:
                     cell_boxes[idx] = cached_boxes
@@ -385,7 +393,41 @@ class Orchestrator:
 
         logger.info("Canli mod dongusu sonlandi.")
 
-    def _submit_live_translation(self, result, idx, cell_boxes, cell_lock, context_lines):
+    def _live_process_cell(self, idx, survivors, source_lang, target_lang, engine_pref,
+                            context_lines, generation, cell_generation, cell_boxes,
+                            cell_last_texts, cell_lock):
+        """Bir hucrenin OCR sonuclarini isler: onbellekten bulunanlar hemen
+        kutu listesine eklenir, bulunamayanlar arka planda cevrilmeye
+        yollanir (bkz. _submit_live_translation). Donen deger:
+        (cached_boxes, cache_hits, pending_count).
+
+        Ayni hucre ayni metni ONCEDEN de gostermisse (orn. komsu bir HUD
+        ogesi titreyip sinyali degistirdigi icin yazi degismedigi halde
+        yeniden okunduysa), akis (_remember) tekrar tekrar en uste
+        tasinmaz - zaman kodu sadece metin bu hucrede YENI belirdiginde
+        guncellenir."""
+        prev_texts = cell_last_texts.get(idx, set())
+        cell_last_texts[idx] = {res.text for res in survivors}
+
+        cached_boxes = []
+        cache_hits = 0
+        pending = 0
+        for res in survivors:
+            cached = self.translator.cache.get(res.text, source_lang, target_lang, engine_pref)
+            if cached is not None:
+                cache_hits += 1
+                cached_boxes.append(self._make_box(res, cached))
+                if res.text not in prev_texts:
+                    self._remember(res.text, cached)
+            else:
+                pending += 1
+                self._submit_live_translation(
+                    res, idx, generation, cell_generation, cell_boxes, cell_lock, context_lines,
+                )
+        return cached_boxes, cache_hits, pending
+
+    def _submit_live_translation(self, result, idx, generation, cell_generation,
+                                  cell_boxes, cell_lock, context_lines):
         """Bir satiri arka planda cevirir; bitince SADECE o hucrenin kutu
         listesine ekler ve overlay'i gunceller. Canli dongu bunu beklemez."""
         if not self._claim_inflight(result.text):
@@ -398,7 +440,16 @@ class Orchestrator:
                 self._release_inflight(result.text)
             if not translated or self._live_stop_event.is_set():
                 return
+            # Akisa (ve translate() icinde zaten onbellege) HER ZAMAN
+            # yazilir - geciken bir ceviri bile olsa kullanicinin akista/
+            # mini panelde goremedigi bir satir olmamali.
             self._remember(result.text, translated)
+            if cell_generation.get(idx) != generation:
+                # Bu hucre, bu ceviri surerken BASKA bir satiriyla tekrar
+                # degisti; eski sonucu simdi ekrana koymak yeni yazinin
+                # ustune binmesine yol acardi - sadece EKRANA koymaktan
+                # vazgeciyoruz (akis/onbellek zaten yukarida guncellendi).
+                return
             box = self._make_box(result, translated)
             with cell_lock:
                 cell_boxes.setdefault(idx, []).append(box)
