@@ -16,7 +16,7 @@
 ; içine gömülmez.
 
 #define MyAppName "Oyun Çevirmen"
-#define MyAppVersion "2.1.1"
+#define MyAppVersion "2.1.2"
 #define MyAppPublisher "Turkeriscan"
 #define MyAppURL "https://github.com/Turkeriscan/OyunCevirmen"
 #define MyAppExeName "OyunCevirmen.exe"

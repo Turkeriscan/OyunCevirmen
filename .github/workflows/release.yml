@@ -9,6 +9,12 @@ on:
     tags:
       - "v*"
 
+# Release'e .exe yukleyebilmek icin GITHUB_TOKEN'a yazma izni gerekir;
+# depo varsayilan olarak salt-okunur token veriyor ("Resource not accessible
+# by integration" hatasi).
+permissions:
+  contents: write
+
 jobs:
   test:
     uses: ./.github/workflows/tests.yml
